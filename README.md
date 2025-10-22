@@ -70,11 +70,10 @@ cd revision-calidad
 npm install
 ```
 
-### 3. Configurar Firebase
-1. Crear un proyecto en [Firebase Console](https://console.firebase.google.com/)
-2. Habilitar Firestore, Authentication y Storage
-3. Copiar las credenciales al archivo `.env`
-4. Configurar las reglas de seguridad en Firebase
+### 3. Configurar Variables de Entorno
+1. Copiar el archivo de ejemplo: `cp .env.example .env`
+2. Completar las variables con tus credenciales de Firebase
+3. Configurar las bases de datos adicionales si es necesario
 
 ### 4. Ejecutar en Desarrollo
 ```bash
