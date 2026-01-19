@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { DatabaseService } from '@/services/database';
 import { useToast } from '@/hooks/useToast';
 import type { Area, Parametro, Evento } from '@/types';
-import { Loader2, Save, FileText, Search, X } from 'lucide-react';
+import { Loader2, Save, FileText, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -22,7 +22,6 @@ const RevisionAreas: React.FC = () => {
   const [selectedArea, setSelectedArea] = useState<string>('');
   const [selectedEvento, setSelectedEvento] = useState<string>('');
   const [eventoIdSearch, setEventoIdSearch] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingParametros, setIsLoadingParametros] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -214,15 +213,6 @@ const RevisionAreas: React.FC = () => {
     }
   };
 
-  // Filtrado de eventos basado en la búsqueda
-  const filteredEventos = useMemo(() => {
-    if (!searchTerm.trim()) return eventos;
-    return eventos.filter(evento =>
-      evento.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      evento.idEvento.toString().includes(searchTerm)
-    );
-  }, [eventos, searchTerm]);
-
   const completedParams = revisionResults.filter(result => result.resultado !== null).length;
   const totalParams = revisionResults.length;
   const progressPercentage = totalParams > 0 ? (completedParams / totalParams) * 100 : 0;
@@ -261,7 +251,7 @@ const RevisionAreas: React.FC = () => {
 
         {/* Búsqueda de Eventos */}
         <div className="bg-card rounded-lg border border-border/50 p-4 lg:p-6 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             <div className="space-y-2">
               <Label className="text-sm font-medium">Búsqueda Rápida por ID de Evento (Skill)</Label>
               <div className="flex items-center space-x-2">
@@ -283,37 +273,7 @@ const RevisionAreas: React.FC = () => {
                 </Button>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Buscar por Nombre</Label>
-              <div className="flex items-center space-x-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Filtrar por nombre..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 border-border/50 focus:border-primary/50"
-                  />
-                </div>
-                {searchTerm && (
-                  <Button 
-                    onClick={() => setSearchTerm('')}
-                    variant="ghost"
-                    size="icon"
-                    className="hover:bg-primary/5"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
           </div>
-          {searchTerm && (
-            <p className="text-xs text-muted-foreground mt-2">
-              {filteredEventos.length} evento(s) encontrado(s) de {eventos.length} total
-            </p>
-          )}
         </div>
 
         {/* Selección de Evento y Área */}
@@ -326,7 +286,7 @@ const RevisionAreas: React.FC = () => {
                   <SelectValue placeholder="Seleccione un evento" />
                 </SelectTrigger>
                 <SelectContent>
-                  {filteredEventos.map((evento) => (
+                  {eventos.map((evento) => (
                     <SelectItem key={evento.id} value={evento.id}>
                       {evento.nombre} (ID: {evento.idEvento})
                     </SelectItem>
