@@ -1,3 +1,11 @@
+# Dependencies
+node_modules
+/dist
+/dist-ssr
+*.local
+package-lock.json
+yarn.lock
+
 # Logs
 logs
 *.log
@@ -6,19 +14,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-pnpm-lock.yaml
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Firebase
+.firebase/
+*-debug.log*
 
 # Editor directories and files
 .vscode/*
@@ -30,5 +29,18 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+*.tsbuildinfo
+.eslintcache
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# System files
+Thumbs.db
+desktop.ini
 
 
