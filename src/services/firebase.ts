@@ -42,7 +42,7 @@ if (!getApps().length) {
 // Export auth and storage from default app (auth provider shared)
 export const auth = getAuth(defaultApp);
 export const storage = getStorage(defaultApp);
-export const functions = getFunctions(defaultApp);
+export const functions = getFunctions(defaultApp, 'us-central1');
 
 // Helper to get (or create) a Firebase app for a given recinto and return its Database
 export function getDatabaseForRecinto(recinto?: string): Database {

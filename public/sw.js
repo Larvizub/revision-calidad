@@ -54,6 +54,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // No cachear peticiones que no sean GET (como las de Firebase Functions que son POST)
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
   // Estrategia especial para la página principal
   if (event.request.mode === 'navigate') {
     event.respondWith(

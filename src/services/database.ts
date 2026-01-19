@@ -113,6 +113,23 @@ export class DatabaseService {
     }
   }
 
+  // Obtener un evento específico de Skill API via Cloud Function
+  async getSkillEventByIdFromAPI(eventNumber: string | number): Promise<{ idEvento: number; nombre: string } | null> {
+    try {
+      const getSkillEvents = httpsCallable(functions, 'getSkillEvents');
+      const result = await getSkillEvents({ eventNumber });
+      const data = result.data as { success: boolean, events: Array<{ idEvento: number; nombre: string }> };
+      
+      if (data.success && data.events.length > 0) {
+        return data.events[0];
+      }
+      return null;
+    } catch (error) {
+      console.error('Error calling getSkillEvents cloud function for single ID:', error);
+      throw error;
+    }
+  }
+
   // Métodos para áreas
 
   // Crear una nueva área
