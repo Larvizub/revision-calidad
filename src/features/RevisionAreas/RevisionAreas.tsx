@@ -21,11 +21,14 @@ const RevisionAreas: React.FC = () => {
   const [parametros, setParametros] = useState<Parametro[]>([]);
   const [selectedArea, setSelectedArea] = useState<string>('');
   const [selectedEvento, setSelectedEvento] = useState<string>('');
+  const [eventoIdSearch, setEventoIdSearch] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingParametros, setIsLoadingParametros] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [revisionResults, setRevisionResults] = useState<RevisionResult[]>([]);
+
+  const [isSearchingSkill, setIsSearchingSkill] = useState(false);
 
   const dbService = useMemo(() => new DatabaseService(), []);
   const { showSuccess, showError } = useToast();
@@ -98,6 +101,55 @@ const RevisionAreas: React.FC = () => {
 
   const handleEventoChange = (eventoId: string) => {
     setSelectedEvento(eventoId);
+  };
+
+  const handleEventoIdSearch = async () => {
+    const searchVal = eventoIdSearch.trim();
+    if (!searchVal) return;
+    
+    setIsSearchingSkill(true);
+    try {
+      // Intentar buscar primero localmente por si ya está
+      const existing = eventos.find(e => 
+        e.idEvento.toString() === searchVal || 
+        e.id === searchVal
+      );
+
+      if (existing) {
+        setSelectedEvento(existing.id);
+        showSuccess(`Evento encontrado localmente: ${existing.nombre}`);
+        setIsSearchingSkill(false);
+        return;
+      }
+
+      // Si no está localmente, buscar en Skill API directamente
+      const skillEvent = await dbService.getSkillEventByIdFromAPI(searchVal);
+      
+      if (skillEvent) {
+        // "Cargarlo directamente" -> Lo importamos a nuestra DB para poder usarlo
+        const newEventoData = {
+          idEvento: skillEvent.idEvento,
+          nombre: skillEvent.nombre,
+          fechaCreacion: new Date().toISOString(),
+          estado: 'activo' as const,
+        };
+        
+        const newId = await dbService.createEvento(newEventoData);
+        const fullNewEvento = { ...newEventoData, id: newId };
+        
+        // Actualizar estado local
+        setEventos(prev => [...prev, fullNewEvento]);
+        setSelectedEvento(newId);
+        showSuccess(`Evento importado desde Skill: ${skillEvent.nombre}`);
+      } else {
+        showError('No se encontró el evento en Skill ni localmente');
+      }
+    } catch (error) {
+      console.error('Error searching event in Skill:', error);
+      showError('Error al buscar en Skill: ' + (error as Error).message);
+    } finally {
+      setIsSearchingSkill(false);
+    }
   };
 
   const handleResultChange = (parametroId: string, resultado: 'cumple' | 'no_cumple' | 'no_aplica') => {
@@ -209,30 +261,56 @@ const RevisionAreas: React.FC = () => {
 
         {/* Búsqueda de Eventos */}
         <div className="bg-card rounded-lg border border-border/50 p-4 lg:p-6 shadow-sm">
-          <Label className="text-base font-medium mb-3 block">Buscar Eventos</Label>
-          <div className="flex items-center space-x-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar eventos por nombre o ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border-border/50 focus:border-primary/50"
-              />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Búsqueda Rápida por ID de Evento (Skill)</Label>
+              <div className="flex items-center space-x-2">
+                <Input
+                  placeholder="Ingrese ID de Skill..."
+                  value={eventoIdSearch}
+                  onChange={(e) => setEventoIdSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleEventoIdSearch()}
+                  className="border-border/50"
+                />
+                <Button 
+                  onClick={handleEventoIdSearch}
+                  variant="secondary"
+                  size="icon"
+                  disabled={isSearchingSkill}
+                  title="Buscar por ID en Skill"
+                >
+                  {isSearchingSkill ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
-            {searchTerm && (
-              <Button 
-                onClick={() => setSearchTerm('')}
-                variant="outline"
-                className="border-primary/20 hover:border-primary/40 hover:bg-primary/5"
-                title="Limpiar búsqueda"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Buscar por Nombre</Label>
+              <div className="flex items-center space-x-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Filtrar por nombre..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 border-border/50 focus:border-primary/50"
+                  />
+                </div>
+                {searchTerm && (
+                  <Button 
+                    onClick={() => setSearchTerm('')}
+                    variant="ghost"
+                    size="icon"
+                    className="hover:bg-primary/5"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
           {searchTerm && (
-            <p className="text-sm text-muted-foreground mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               {filteredEventos.length} evento(s) encontrado(s) de {eventos.length} total
             </p>
           )}

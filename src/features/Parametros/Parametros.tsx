@@ -223,10 +223,7 @@ const Parametros: React.FC = () => {
       <div className="h-full w-full bg-background overflow-auto">
         <div className="p-4 lg:p-6 space-y-6 min-h-full">
           <div className="flex items-center justify-center h-64">
-            <div className="flex flex-col items-center space-y-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-muted-foreground">Cargando parámetros...</p>
-            </div>
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
           </div>
         </div>
       </div>
