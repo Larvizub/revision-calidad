@@ -29,6 +29,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// 2 horas en milisegundos
+const INACTIVITY_TIMEOUT = 2 * 60 * 60 * 1000;
+
 // Función para registrar/actualizar usuario en Firebase Database
 const ensureUserInDatabase = async (firebaseUser: User, dbService: DatabaseService) => {
   try {
@@ -202,6 +205,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw error;
     }
   };
+
+  // Lógica de cierre de sesión por inactividad
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (user) {
+        timeoutId = setTimeout(() => {
+          console.log('Cerrando sesión por inactividad (2 horas)');
+          logout();
+        }, INACTIVITY_TIMEOUT);
+      }
+    };
+
+    const activityEvents = [
+      'mousedown',
+      'mousemove',
+      'keypress',
+      'scroll',
+      'touchstart',
+      'click'
+    ];
+
+    if (user) {
+      // Iniciar el temporizador al detectar usuario
+      resetTimer();
+
+      // Agregar listeners para eventos de actividad
+      activityEvents.forEach(event => {
+        window.addEventListener(event, resetTimer);
+      });
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [user]);
 
   const value: AuthContextType = {
     user,
