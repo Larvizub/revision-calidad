@@ -5,6 +5,8 @@ node_modules
 *.local
 package-lock.json
 yarn.lock
+package.json
+pnpm-lock.yaml
 
 # Logs
 logs
