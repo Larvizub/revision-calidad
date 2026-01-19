@@ -263,41 +263,85 @@ const Eventos: React.FC = () => {
       const year = parseInt(skillDate.year);
       
       const skillEvents = await dbService.getSkillEventsFromAPI(month, year);
-      
-      if (skillEvents.length === 0) {
-        showError('No se encontraron eventos para el mes y año seleccionados');
+      if (!skillEvents || skillEvents.length === 0) {
+        showError('No se hallaron eventos en Skill para este período.');
+        setIsSkillLoading(false);
         return;
       }
 
-      // Obtener eventos existentes
-      const existingEventos = await dbService.getEventos();
-      const existingIds = new Set(existingEventos.map(e => Number(e.idEvento)));
+      // 1. Obtener lista completa actual
+      const currentDB = await dbService.getEventos();
 
-      // Filtrar los que ya existen
-      const toCreate = skillEvents.filter(r => !existingIds.has(r.idEvento));
-      const skippedExisting = skillEvents.length - toCreate.length;
+      // Función de limpieza de nombres (Normalización)
+      const clean = (s: string) => 
+        String(s || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
 
-      if (toCreate.length === 0) {
-        showError(`Ningún registro nuevo para importar; ${skippedExisting} evento(s) ya existían.`);
-        setIsSkillDialogOpen(false);
-        return;
+      let created = 0, updated = 0, deleted = 0;
+      const processedNames = new Set<string>();
+
+      // 2. Procesar cada evento que viene de Skill
+      for (const sEvent of skillEvents) {
+        const sId = Number(sEvent.idEvento);
+        const sName = sEvent.nombre.trim();
+        const normName = clean(sName);
+
+        if (processedNames.has(normName)) continue;
+        processedNames.add(normName);
+
+        // Buscar todos los registros en DB que coincidan por nombre normalizado
+        const matchesInDB = currentDB.filter(e => clean(e.nombre) === normName);
+
+        if (matchesInDB.length > 0) {
+          // Identificar si alguno ya tiene el ID correcto
+          const official = matchesInDB.find(e => Number(e.idEvento) === sId);
+
+          if (official) {
+            // El correcto existe. ELIMINAR LOS DEMÁS DUPLICADOS de ese nombre.
+            for (const m of matchesInDB) {
+              if (m.id !== official.id) {
+                await dbService.deleteEvento(m.id);
+                deleted++;
+              }
+            }
+            // Asegurar nombre actualizado
+            if (official.nombre !== sName) await dbService.updateEvento(official.id, { nombre: sName });
+          } else {
+            // No hay ninguno con el ID correcto. Tomamos el primero, lo fijamos y borramos el resto.
+            const first = matchesInDB[0];
+            await dbService.updateEvento(first.id, { idEvento: sId, nombre: sName });
+            updated++;
+
+            for (let i = 1; i < matchesInDB.length; i++) {
+              await dbService.deleteEvento(matchesInDB[i].id);
+              deleted++;
+            }
+          }
+        } else {
+          // No existe por nombre. Verificar por ID.
+          const byId = currentDB.find(e => Number(e.idEvento) === sId);
+          if (byId) {
+            await dbService.updateEvento(byId.id, { nombre: sName });
+            updated++;
+          } else {
+            // Crear nuevo
+            await dbService.createEvento({
+              idEvento: sId,
+              nombre: sName,
+              fechaCreacion: new Date().toISOString(),
+              estado: 'activo'
+            });
+            created++;
+          }
+        }
       }
 
-      // Preparar payload para import
-      const eventosToImport = toCreate.map(r => ({
-        idEvento: r.idEvento,
-        nombre: r.nombre,
-        fechaCreacion: new Date().toISOString(),
-        estado: 'activo' as const,
-      }));
-
-      await dbService.importEventosFromExcel(eventosToImport);
+      setSearchTerm(''); // Limpiar filtro para ver todo
       await loadEventos();
-      showSuccess(`Importados ${eventosToImport.length} eventos de Skill. ${skippedExisting} omitido(s).`);
+      showSuccess(`Limpieza exitosa: ${created} nuevos, ${updated} actualizados, ${deleted} duplicados eliminados.`);
       setIsSkillDialogOpen(false);
     } catch (error) {
-      console.error('Error importing from Skill API:', error);
-      showError('Error al conectar con Skill API. Verifique su conexión o intente más tarde.');
+      console.error('Error sincronizando Skill:', error);
+      showError('Error al conectar con Skill API.');
     } finally {
       setIsSkillLoading(false);
     }
