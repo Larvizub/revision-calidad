@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   LayoutDashboard,
-  Calendar,
   MapPin,
   Settings,
   FileText,
@@ -40,7 +39,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onNavigate, showHeader = true }) => {
 
   const allMenuItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/eventos', label: 'Eventos', icon: Calendar },
     { path: '/areas', label: 'Áreas', icon: MapPin },
     { path: '/parametros', label: 'Parámetros', icon: Settings },
     { path: '/revision-areas', label: 'Revisión Áreas', icon: CheckSquare },
@@ -57,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onNavigate, showHeader = true }) => {
   if (role === 'estandar') {
     menuItems = allMenuItems.filter(item => ['/revision-areas', '/reportes', '/perfil'].includes(item.path));
   } else if (role === 'calidad') {
-    menuItems = allMenuItems.filter(item => ['/', '/eventos', '/areas', '/parametros', '/revision-areas', '/revision-calidad', '/reportes', '/perfil'].includes(item.path));
+    menuItems = allMenuItems.filter(item => ['/', '/areas', '/parametros', '/revision-areas', '/revision-calidad', '/reportes', '/perfil'].includes(item.path));
   } else if (role === 'administrador') {
     menuItems = allMenuItems; // todos
   }
