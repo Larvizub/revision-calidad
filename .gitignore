@@ -18,6 +18,8 @@ lerna-debug.log*
 # Firebase
 .firebase/
 *-debug.log*
+functions/lib/
+functions/node_modules/
 
 # Editor directories and files
 .vscode/*

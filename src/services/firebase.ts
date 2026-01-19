@@ -3,6 +3,7 @@ import type { FirebaseApp } from 'firebase/app';
 import { getAuth, OAuthProvider } from 'firebase/auth';
 import { getDatabase, Database } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 
 const baseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -41,6 +42,7 @@ if (!getApps().length) {
 // Export auth and storage from default app (auth provider shared)
 export const auth = getAuth(defaultApp);
 export const storage = getStorage(defaultApp);
+export const functions = getFunctions(defaultApp);
 
 // Helper to get (or create) a Firebase app for a given recinto and return its Database
 export function getDatabaseForRecinto(recinto?: string): Database {

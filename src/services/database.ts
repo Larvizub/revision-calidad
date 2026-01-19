@@ -1,5 +1,6 @@
 import { ref, push, set, get, update, remove, onValue } from 'firebase/database';
-import { getDatabaseForRecinto } from './firebase';
+import { getDatabaseForRecinto, functions } from './firebase';
+import { httpsCallable } from 'firebase/functions';
 import type { Database } from 'firebase/database';
 
 // Instancia de base de datos por defecto (se usará si no se proporciona recinto)
@@ -93,6 +94,23 @@ export class DatabaseService {
       updates[newKey] = evento;
     });
     await update(this.eventosRef, updates);
+  }
+
+  // Obtener eventos desde Skill API via Cloud Function
+  async getSkillEventsFromAPI(month: number, year: number): Promise<Array<{ idEvento: number; nombre: string }>> {
+    try {
+      const getSkillEvents = httpsCallable(functions, 'getSkillEvents');
+      const result = await getSkillEvents({ month, year });
+      const data = result.data as { success: boolean, events: Array<{ idEvento: number; nombre: string }> };
+      
+      if (data.success) {
+        return data.events;
+      }
+      return [];
+    } catch (error) {
+      console.error('Error calling getSkillEvents cloud function:', error);
+      throw error;
+    }
   }
 
   // Métodos para áreas

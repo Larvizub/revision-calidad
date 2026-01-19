@@ -225,10 +225,7 @@ const Dashboard: React.FC = () => {
       <div className="h-full w-full bg-background overflow-auto">
         <div className="p-4 lg:p-6 space-y-6 min-h-full">
           <div className="flex items-center justify-center min-h-[400px]">
-            <div className="flex items-center gap-3 text-muted-foreground">
-              <Loader2 className="h-8 w-8 animate-spin" />
-              <span className="text-lg">Cargando dashboard...</span>
-            </div>
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
           </div>
         </div>
       </div>

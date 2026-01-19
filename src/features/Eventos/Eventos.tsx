@@ -8,7 +8,8 @@ import { DatabaseService } from '@/services/database';
 import { useToast } from '@/hooks/useToast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Evento } from '@/types';
-import { Plus, Search, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Upload, Loader2, Globe } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
 
 const Eventos: React.FC = () => {
@@ -17,6 +18,12 @@ const Eventos: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSkillDialogOpen, setIsSkillDialogOpen] = useState(false);
+  const [isSkillLoading, setIsSkillLoading] = useState(false);
+  const [skillDate, setSkillDate] = useState({
+    month: (new Date().getMonth() + 1).toString(),
+    year: new Date().getFullYear().toString()
+  });
   const [editingEvento, setEditingEvento] = useState<Evento | null>(null);
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
@@ -249,6 +256,53 @@ const Eventos: React.FC = () => {
     }
   };
 
+  const handleImportSkill = async () => {
+    setIsSkillLoading(true);
+    try {
+      const month = parseInt(skillDate.month);
+      const year = parseInt(skillDate.year);
+      
+      const skillEvents = await dbService.getSkillEventsFromAPI(month, year);
+      
+      if (skillEvents.length === 0) {
+        showError('No se encontraron eventos para el mes y año seleccionados');
+        return;
+      }
+
+      // Obtener eventos existentes
+      const existingEventos = await dbService.getEventos();
+      const existingIds = new Set(existingEventos.map(e => Number(e.idEvento)));
+
+      // Filtrar los que ya existen
+      const toCreate = skillEvents.filter(r => !existingIds.has(r.idEvento));
+      const skippedExisting = skillEvents.length - toCreate.length;
+
+      if (toCreate.length === 0) {
+        showError(`Ningún registro nuevo para importar; ${skippedExisting} evento(s) ya existían.`);
+        setIsSkillDialogOpen(false);
+        return;
+      }
+
+      // Preparar payload para import
+      const eventosToImport = toCreate.map(r => ({
+        idEvento: r.idEvento,
+        nombre: r.nombre,
+        fechaCreacion: new Date().toISOString(),
+        estado: 'activo' as const,
+      }));
+
+      await dbService.importEventosFromExcel(eventosToImport);
+      await loadEventos();
+      showSuccess(`Importados ${eventosToImport.length} eventos de Skill. ${skippedExisting} omitido(s).`);
+      setIsSkillDialogOpen(false);
+    } catch (error) {
+      console.error('Error importing from Skill API:', error);
+      showError('Error al conectar con Skill API. Verifique su conexión o intente más tarde.');
+    } finally {
+      setIsSkillLoading(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       idEvento: '',
@@ -276,10 +330,7 @@ const Eventos: React.FC = () => {
       <div className="h-full w-full bg-background overflow-auto">
         <div className="p-4 lg:p-6 space-y-6 min-h-full">
           <div className="flex items-center justify-center h-64">
-            <div className="flex flex-col items-center space-y-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-muted-foreground">Cargando eventos...</p>
-            </div>
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
           </div>
         </div>
       </div>
@@ -373,6 +424,82 @@ const Eventos: React.FC = () => {
                 Importar Excel
               </Button>
             </div>
+            
+            <Dialog open={isSkillDialogOpen} onOpenChange={setIsSkillDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="secondary" className="font-semibold shadow-sm">
+                  <Globe className="mr-2 h-4 w-4" />
+                  Cargar de Skill
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md mx-auto">
+                <DialogHeader>
+                  <DialogTitle className="font-semibold text-xl">
+                    Sincronizar con Skill API
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-6 py-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="month" className="text-sm font-medium">Mes</Label>
+                    <Select 
+                      value={skillDate.month} 
+                      onValueChange={(val) => setSkillDate(prev => ({ ...prev, month: val }))}
+                    >
+                      <SelectTrigger id="month">
+                        <SelectValue placeholder="Seleccionar mes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <SelectItem key={i + 1} value={(i + 1).toString()}>
+                            {new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(2024, i, 1))}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="year" className="text-sm font-medium">Año</Label>
+                    <Select 
+                      value={skillDate.year} 
+                      onValueChange={(val) => setSkillDate(prev => ({ ...prev, year: val }))}
+                    >
+                      <SelectTrigger id="year">
+                        <SelectValue placeholder="Seleccionar año" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 5 }, (_, i) => {
+                          const year = (new Date().getFullYear() - 2 + i).toString();
+                          return <SelectItem key={year} value={year}>{year}</SelectItem>;
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="bg-muted/50 p-3 rounded-md text-xs text-muted-foreground flex gap-2">
+                    <Globe className="h-4 w-4 shrink-0" />
+                    <span>Esto buscará eventos en Skill para el período seleccionado y los agregará al sistema.</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setIsSkillDialogOpen(false)} disabled={isSkillLoading}>
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={handleImportSkill}
+                    disabled={isSkillLoading}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    {isSkillLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      'Sincronizar'
+                    )}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </div>
