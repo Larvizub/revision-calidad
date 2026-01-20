@@ -199,6 +199,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     try {
+      localStorage.removeItem('lastActivity');
       await signOut(auth);
     } catch (error) {
       console.error('Error signing out:', error);
@@ -213,6 +214,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const resetTimer = () => {
       if (timeoutId) clearTimeout(timeoutId);
       if (user) {
+        // Guardar marca de tiempo en localStorage para persistencia entre sesiones/pestañas
+        localStorage.setItem('lastActivity', Date.now().toString());
+
         timeoutId = setTimeout(() => {
           console.log('Cerrando sesión por inactividad (2 horas)');
           logout();
@@ -230,6 +234,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     ];
 
     if (user) {
+      // Verificar si ya excedió el tiempo al cargar (útil si se cerró el navegador)
+      const lastActivity = localStorage.getItem('lastActivity');
+      if (lastActivity) {
+        const inactiveTime = Date.now() - parseInt(lastActivity);
+        if (inactiveTime > INACTIVITY_TIMEOUT) {
+          console.log('Sesión expirada por inactividad previa');
+          logout();
+          return;
+        }
+      }
+
       // Iniciar el temporizador al detectar usuario
       resetTimer();
 
