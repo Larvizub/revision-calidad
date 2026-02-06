@@ -29,10 +29,23 @@ const Sidebar: React.FC<SidebarProps> = ({ onNavigate, showHeader = true }) => {
       if (names.length >= 2) {
         return (names[0][0] + names[names.length - 1][0]).toUpperCase();
       }
-      return names[0][0].toUpperCase();
+      // Si solo hay un nombre, intentar sacar 2 letras
+      const first = names[0] || '';
+      const a = first[0] || 'U';
+      const b = first[1] || '';
+      return (a + b).toUpperCase();
     }
     if (email) {
-      return email[0].toUpperCase();
+      const local = email.split('@')[0] || '';
+      const parts = local.split(/[._-]+/).filter(Boolean);
+      if (parts.length >= 2) {
+        const a = parts[0][0] || 'U';
+        const b = parts[parts.length - 1][0] || '';
+        return (a + b).toUpperCase();
+      }
+      const a = local[0] || 'U';
+      const b = local[1] || '';
+      return (a + b).toUpperCase();
     }
     return 'U';
   };
@@ -133,19 +146,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onNavigate, showHeader = true }) => {
           <div className="mb-3 p-3 bg-accent/20 rounded-lg border border-border/30">
             <div className="flex items-center space-x-3">
               <div className="relative">
-                {userProfile.photoURL ? (
-                  <img
-                    src={userProfile.photoURL}
-                    alt="Foto de perfil"
-                    className="h-10 w-10 rounded-full object-cover border-2 border-primary/20"
-                  />
-                ) : (
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center border-2 border-primary/20">
-                    <span className="text-sm font-semibold text-primary-foreground">
-                      {getUserInitials(userProfile.displayName, userProfile.email)}
-                    </span>
-                  </div>
-                )}
+                <div
+                  className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center border-2 border-primary/20"
+                  aria-label="Avatar de usuario"
+                  title={userProfile.displayName || userProfile.email || 'Usuario'}
+                >
+                  <span className="text-sm font-semibold text-primary-foreground">
+                    {getUserInitials(userProfile.displayName, userProfile.email)}
+                  </span>
+                </div>
                 <div className="absolute -bottom-1 -right-1 h-3 w-3 bg-green-500 border-2 border-background rounded-full"></div>
               </div>
               <div className="flex-1 min-w-0">
