@@ -9,7 +9,6 @@ import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Evento, Reporte } from '@/types';
 import { 
-  Loader2, 
   FileText, 
   Download, 
   Filter,
@@ -18,6 +17,8 @@ import {
   X,
   Trash2
 } from 'lucide-react';
+import { AppPageSkeleton, InlineRowsSkeleton } from '@/components/AppSkeletons';
+import { Skeleton } from '@/components/ui/skeleton';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Workbook, type Worksheet } from 'exceljs';
@@ -1774,15 +1775,7 @@ const Reportes: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        </div>
-      </div>
-    );
+    return <AppPageSkeleton actionCount={2} showSearch={false} rows={8} columns={6} />;
   }
 
   return (
@@ -1968,8 +1961,16 @@ const Reportes: React.FC = () => {
           </div>
 
           {isPreviewLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div className="space-y-3">
+              <div className="grid grid-cols-6 gap-3">
+                <Skeleton className="h-4" />
+                <Skeleton className="h-4" />
+                <Skeleton className="h-4" />
+                <Skeleton className="h-4" />
+                <Skeleton className="h-4" />
+                <Skeleton className="h-4" />
+              </div>
+              <InlineRowsSkeleton rows={6} />
             </div>
           ) : previewData && previewData.length > 0 ? (
             <div className="overflow-x-auto">

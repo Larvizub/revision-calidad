@@ -9,7 +9,6 @@ import { DatabaseService } from '@/services/database';
 import { useToast } from '@/hooks/useToast';
 import type { Usuario } from '@/types';
 import { 
-  Loader2, 
   Edit, 
   Trash2, 
   Search,
@@ -20,6 +19,8 @@ import {
   UserX
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { AppPageSkeleton } from '@/components/AppSkeletons';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // Crear instancia de DatabaseService dentro del componente para respetar el recinto seleccionado
 
@@ -241,18 +242,7 @@ const Usuarios: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center h-64">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="text-lg">Cargando usuarios...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <AppPageSkeleton actionCount={1} rows={8} columns={6} />;
   }
 
   return (
@@ -424,7 +414,7 @@ const Usuarios: React.FC = () => {
                 </div>
                 <div className="flex gap-2 pt-4">
                   <Button type="submit" disabled={isSaving}>
-                    {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    {isSaving && <Skeleton className="w-4 h-4 mr-2 rounded-full" />}
                     {editingUsuario ? 'Actualizar' : 'Crear'}
                   </Button>
                   <Button type="button" variant="outline" onClick={resetForm}>

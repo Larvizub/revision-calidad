@@ -8,8 +8,10 @@ import { DatabaseService } from '@/services/database';
 import { storage } from '@/services/firebase';
 import { useToast } from '@/hooks/useToast';
 import type { Revision, Area, Parametro, Evento } from '@/types';
-import { Loader2, Save, FileText, CheckCircle, XCircle, Clock, Calendar, Search, X, Trash2 } from 'lucide-react';
+import { Save, FileText, CheckCircle, XCircle, Clock, Calendar, Search, X, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { RevisionLoadingSkeleton } from '@/components/AppSkeletons';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface VerificacionResult {
   parametroId: string;
@@ -359,15 +361,7 @@ const RevisionCalidad: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        </div>
-      </div>
-    );
+    return <RevisionLoadingSkeleton />;
   }
 
   return (
@@ -674,7 +668,7 @@ const RevisionCalidad: React.FC = () => {
                       title="Eliminar evidencia"
                     >
                       {deletingEvidence === url ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Skeleton className="h-3.5 w-3.5 rounded-full" />
                       ) : (
                         <Trash2 className="h-3.5 w-3.5" />
                       )}
@@ -731,7 +725,7 @@ const RevisionCalidad: React.FC = () => {
                       className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-md"
                       disabled={uploading}
                     >
-                    {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {uploading ? <Skeleton className="h-4 w-4 rounded-full mr-2" /> : null}
                     <span>{uploading ? 'Subiendo...' : 'Seleccionar archivos'}</span>
                   </Button>
                   <p className="text-xs text-muted-foreground">{files.length} / 6 seleccionados</p>

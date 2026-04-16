@@ -7,7 +7,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/useToast';
 import type { Usuario } from '@/types';
 import { 
-  Loader2, 
   User,
   Mail,
   Shield,
@@ -22,6 +21,8 @@ import {
   Settings,
   CheckCircle
 } from 'lucide-react';
+import { ProfileLoadingSkeleton } from '@/components/AppSkeletons';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Perfil: React.FC = () => {
   const dbService = useMemo(() => new DatabaseService(), []);
@@ -159,15 +160,7 @@ const Perfil: React.FC = () => {
   }
 
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center min-h-[400px]">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          </div>
-        </div>
-      </div>
-    );
+    return <ProfileLoadingSkeleton />;
   }
 
   return (
@@ -219,9 +212,9 @@ const Perfil: React.FC = () => {
             </CardHeader>
             <CardContent>
               {usuario ? getRolDisplay(usuario.rol) : (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-muted-foreground">Cargando...</span>
+                <div className="space-y-2">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-3 w-2/3" />
                 </div>
               )}
             </CardContent>
@@ -235,9 +228,9 @@ const Perfil: React.FC = () => {
             </CardHeader>
             <CardContent>
               {usuario ? getEstadoDisplay(usuario.estado) : (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-muted-foreground">Cargando...</span>
+                <div className="space-y-2">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-3 w-1/2" />
                 </div>
               )}
             </CardContent>
@@ -285,7 +278,7 @@ const Perfil: React.FC = () => {
                     />
                     <div className="flex gap-2">
                       <Button onClick={handleSave} disabled={isSaving} size="sm" className="flex-1 font-semibold">
-                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                        {isSaving ? <Skeleton className="h-4 w-4 mr-2 rounded-full" /> : <Save className="h-4 w-4 mr-2" />}
                         {isSaving ? 'Guardando...' : 'Guardar'}
                       </Button>
                       <Button variant="outline" onClick={handleCancel} size="sm" className="flex-1 font-semibold">
@@ -318,9 +311,13 @@ const Perfil: React.FC = () => {
                   <Calendar className="h-4 w-4 text-blue-600" />
                   <div>
                     <p className="font-medium">Registrado</p>
-                    <p className="text-xs text-muted-foreground">
-                      {usuario ? new Date(usuario.fechaCreacion).toLocaleDateString('es-ES') : 'Cargando...'}
-                    </p>
+                    {usuario ? (
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(usuario.fechaCreacion).toLocaleDateString('es-ES')}
+                      </p>
+                    ) : (
+                      <Skeleton className="h-3 w-20 mt-1" />
+                    )}
                   </div>
                 </div>
               </div>

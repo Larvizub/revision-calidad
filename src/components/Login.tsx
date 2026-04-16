@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
-import { Loader2, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
+import { AuthLoadingSkeleton } from '@/components/AppSkeletons';
 
 const Login: React.FC = () => {
   const { signInWithMicrosoft, user, loading } = useAuth();
@@ -40,13 +41,7 @@ const Login: React.FC = () => {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/10 to-secondary/10">
-        <div className="flex flex-col items-center">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        </div>
-      </div>
-    );
+    return <AuthLoadingSkeleton />;
   }
 
   return (

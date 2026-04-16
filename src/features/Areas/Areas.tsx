@@ -8,8 +8,9 @@ import { DatabaseService } from '@/services/database';
 import { useToast } from '@/hooks/useToast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Area } from '@/types';
-import { Plus, Search, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Upload } from 'lucide-react';
 import { readExcelFirstSheetRows } from '@/lib/excel';
+import { AppPageSkeleton } from '@/components/AppSkeletons';
 
 const Areas: React.FC = () => {
   const [areas, setAreas] = useState<Area[]>([]);
@@ -196,15 +197,7 @@ const Areas: React.FC = () => {
   };
 
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          </div>
-        </div>
-      </div>
-    );
+    return <AppPageSkeleton actionCount={2} rows={8} columns={3} />;
   }
 
   return (

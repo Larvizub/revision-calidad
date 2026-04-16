@@ -22,6 +22,7 @@ interface UserProfile {
 interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
+  currentRecinto: string;
   loading: boolean;
   signInWithMicrosoft: (recinto?: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -107,6 +108,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [currentRecinto, setCurrentRecinto] = useState<string>(() => localStorage.getItem('recinto') || 'CCCI');
   const [loading, setLoading] = useState(true);
   
   // Crear instancia de DatabaseService una sola vez
@@ -115,7 +117,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const stored = localStorage.getItem('recinto');
     if (stored) {
       setDatabaseForRecinto(stored);
+      setCurrentRecinto(stored);
     }
+  }, []);
+
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key !== 'recinto') return;
+
+      const nextRecinto = event.newValue || 'CCCI';
+      setDatabaseForRecinto(nextRecinto);
+      setCurrentRecinto(nextRecinto);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const dbService = useMemo(() => new DatabaseService(), []);
@@ -166,6 +184,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (recinto) {
         // Set DB instances for the selected recinto before login
         setDatabaseForRecinto(recinto);
+        setCurrentRecinto(recinto);
       }
 
       const result = await signInWithPopup(auth, microsoftProvider);
@@ -265,6 +284,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     userProfile,
+    currentRecinto,
     loading,
     signInWithMicrosoft,
     logout,

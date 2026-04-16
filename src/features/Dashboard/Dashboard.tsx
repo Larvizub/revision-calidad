@@ -6,7 +6,6 @@ import { DatabaseService } from '@/services/database';
 import { useToast } from '@/hooks/useToast';
 import type { Revision, Usuario, Evento, Area } from '@/types';
 import { 
-  Loader2, 
   Calendar,
   CheckCircle,
   XCircle,
@@ -18,8 +17,10 @@ import {
   AlertTriangle,
   BarChart3,
   PieChart,
-  Activity
+  Activity,
+  TrendingUp
 } from 'lucide-react';
+import { DashboardLoadingSkeleton } from '@/components/AppSkeletons';
 
 // dbService will be created lazily inside the component to ensure recinto is set before instantiation
 
@@ -50,6 +51,30 @@ interface DashboardMetrics {
   };
   revisionesRecientes: Revision[];
 }
+
+interface CircularChartSegment {
+  label: string;
+  value: number;
+  color: string;
+  textClass: string;
+}
+
+const buildConicGradient = (segments: CircularChartSegment[]): string => {
+  const total = segments.reduce((acc, segment) => acc + segment.value, 0);
+  if (total <= 0) {
+    return 'conic-gradient(hsl(var(--muted)) 0% 100%)';
+  }
+
+  let cursor = 0;
+  const stops = segments.map((segment) => {
+    const start = (cursor / total) * 100;
+    cursor += segment.value;
+    const end = (cursor / total) * 100;
+    return `${segment.color} ${start}% ${end}%`;
+  });
+
+  return `conic-gradient(${stops.join(', ')})`;
+};
 
 const Dashboard: React.FC = () => {
   // Crear instancia de DatabaseService cuando el componente se monta (después de que main.tsx haya seteado el recinto)
@@ -220,16 +245,155 @@ const Dashboard: React.FC = () => {
     return () => window.removeEventListener('revisiones:changed', handler as EventListener);
   }, [loadDashboardData, fechaDesde, fechaHasta]);
 
+  const estadoRevisionSegments = useMemo<CircularChartSegment[]>(() => [
+    {
+      label: 'Aprobadas',
+      value: metrics?.revisiones.aprobadas ?? 0,
+      color: '#16a34a',
+      textClass: 'text-green-600'
+    },
+    {
+      label: 'Pendientes',
+      value: metrics?.revisiones.pendientes ?? 0,
+      color: '#ca8a04',
+      textClass: 'text-yellow-600'
+    },
+    {
+      label: 'Rechazadas',
+      value: metrics?.revisiones.rechazadas ?? 0,
+      color: '#dc2626',
+      textClass: 'text-red-600'
+    }
+  ], [metrics]);
+
+  const rolesSegments = useMemo<CircularChartSegment[]>(() => [
+    {
+      label: 'Administradores',
+      value: metrics?.usuarios.administradores ?? 0,
+      color: '#dc2626',
+      textClass: 'text-red-600'
+    },
+    {
+      label: 'Calidad',
+      value: metrics?.usuarios.calidad ?? 0,
+      color: '#2563eb',
+      textClass: 'text-blue-600'
+    },
+    {
+      label: 'Estándar',
+      value: metrics?.usuarios.estandar ?? 0,
+      color: '#16a34a',
+      textClass: 'text-green-600'
+    }
+  ], [metrics]);
+
+  const trendData = useMemo(() => {
+    const filteredRevisiones = aplicarFiltrosRevisiones(revisionesData, { fechaDesde, fechaHasta });
+    const formatter = new Intl.DateTimeFormat('es-ES', { month: 'short', year: '2-digit' });
+
+    const toMonthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const fromMonthKey = (key: string) => {
+      const [year, month] = key.split('-').map(Number);
+      return new Date(year, month - 1, 1);
+    };
+
+    const monthBuckets = new Map<string, { total: number; aprobadas: number }>();
+
+    filteredRevisiones.forEach((revision) => {
+      const revisionDate = new Date(revision.fechaRevision);
+      if (Number.isNaN(revisionDate.getTime())) {
+        return;
+      }
+
+      const key = toMonthKey(new Date(revisionDate.getFullYear(), revisionDate.getMonth(), 1));
+      const bucket = monthBuckets.get(key) ?? { total: 0, aprobadas: 0 };
+      bucket.total += 1;
+      if (revision.estado === 'aprobado') {
+        bucket.aprobadas += 1;
+      }
+      monthBuckets.set(key, bucket);
+    });
+
+    let orderedKeys = Array.from(monthBuckets.keys()).sort();
+
+    if (orderedKeys.length === 0) {
+      const currentMonth = new Date();
+      orderedKeys = Array.from({ length: 6 }, (_, idx) => {
+        const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - (5 - idx), 1);
+        return toMonthKey(date);
+      });
+    } else if (orderedKeys.length > 6) {
+      orderedKeys = orderedKeys.slice(-6);
+    }
+
+    return orderedKeys.map((key) => {
+      const bucket = monthBuckets.get(key) ?? { total: 0, aprobadas: 0 };
+      const effectiveness = bucket.total > 0 ? Math.round((bucket.aprobadas / bucket.total) * 100) : 0;
+      return {
+        key,
+        label: formatter.format(fromMonthKey(key)).replace('.', ''),
+        total: bucket.total,
+        aprobadas: bucket.aprobadas,
+        efectividad: effectiveness
+      };
+    });
+  }, [aplicarFiltrosRevisiones, revisionesData, fechaDesde, fechaHasta]);
+
+  const trendCoordinates = useMemo(() => {
+    const chartWidth = 760;
+    const chartHeight = 280;
+    const chartPadding = 34;
+
+    if (trendData.length === 0) {
+      return {
+        chartWidth,
+        chartHeight,
+        chartPadding,
+        points: [] as Array<{ x: number; y: number; label: string; efectividad: number }>,
+        polylinePoints: '',
+        areaPoints: ''
+      };
+    }
+
+    const denominator = Math.max(trendData.length - 1, 1);
+    const drawableWidth = chartWidth - chartPadding * 2;
+
+    const points = trendData.map((point, index) => {
+      const x = trendData.length === 1
+        ? chartWidth / 2
+        : chartPadding + (index / denominator) * drawableWidth;
+      const y = chartHeight - chartPadding - (point.efectividad / 100) * (chartHeight - chartPadding * 2);
+
+      return {
+        x,
+        y,
+        label: point.label,
+        efectividad: point.efectividad
+      };
+    });
+
+    const polylinePoints = points.map((point) => `${point.x},${point.y}`).join(' ');
+    const firstX = points[0]?.x ?? chartPadding;
+    const lastX = points[points.length - 1]?.x ?? (chartWidth - chartPadding);
+    const baselineY = chartHeight - chartPadding;
+    const areaPoints = `${firstX},${baselineY} ${polylinePoints} ${lastX},${baselineY}`;
+
+    return { chartWidth, chartHeight, chartPadding, points, polylinePoints, areaPoints };
+  }, [trendData]);
+
+  const revisionTotal = metrics?.revisiones.total ?? 0;
+  const rolesTotal = metrics?.usuarios.total ?? 0;
+  const promedioEfectividad = trendData.length > 0
+    ? Math.round(trendData.reduce((acc, point) => acc + point.efectividad, 0) / trendData.length)
+    : 0;
+  const mejorMes = trendData.reduce(
+    (best, current) => (current.efectividad > best.efectividad ? current : best),
+    trendData[0] ?? { label: 'Sin datos', efectividad: 0, total: 0, aprobadas: 0, key: 'N/A' }
+  );
+  const ultimoMes = trendData[trendData.length - 1] ?? { label: 'Sin datos', efectividad: 0, total: 0, aprobadas: 0, key: 'N/A' };
+
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center min-h-[400px]">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          </div>
-        </div>
-      </div>
-    );
+    return <DashboardLoadingSkeleton />;
   }
 
   if (!metrics) {
@@ -449,6 +613,209 @@ const Dashboard: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Gráficos circulares */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border border-border/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+                <PieChart className="h-5 w-5" />
+                Composición Circular de Revisiones
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col xl:flex-row items-center gap-6">
+                <div className="relative h-52 w-52 shrink-0">
+                  <div
+                    className="absolute inset-0 rounded-full border border-border/70"
+                    style={{ background: buildConicGradient(estadoRevisionSegments) }}
+                  />
+                  <div className="absolute inset-8 rounded-full bg-card border border-border/60 flex flex-col items-center justify-center text-center">
+                    <span className="text-3xl font-bold text-foreground">{revisionTotal}</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wide">Total</span>
+                  </div>
+                </div>
+
+                <div className="w-full space-y-2">
+                  {estadoRevisionSegments.map((segment) => {
+                    const percentage = revisionTotal > 0 ? Math.round((segment.value / revisionTotal) * 100) : 0;
+                    return (
+                      <div key={segment.label} className="flex items-center justify-between rounded-lg border border-border/40 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: segment.color }} />
+                          <span className="text-sm font-medium">{segment.label}</span>
+                        </div>
+                        <div className="text-sm">
+                          <span className={`font-semibold ${segment.textClass}`}>{segment.value}</span>
+                          <span className="text-muted-foreground"> ({percentage}%)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+                <Users className="h-5 w-5" />
+                Composición Circular de Roles
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col xl:flex-row items-center gap-6">
+                <div className="relative h-52 w-52 shrink-0">
+                  <div
+                    className="absolute inset-0 rounded-full border border-border/70"
+                    style={{ background: buildConicGradient(rolesSegments) }}
+                  />
+                  <div className="absolute inset-8 rounded-full bg-card border border-border/60 flex flex-col items-center justify-center text-center">
+                    <span className="text-3xl font-bold text-foreground">{rolesTotal}</span>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wide">Usuarios</span>
+                  </div>
+                </div>
+
+                <div className="w-full space-y-2">
+                  {rolesSegments.map((segment) => {
+                    const percentage = rolesTotal > 0 ? Math.round((segment.value / rolesTotal) * 100) : 0;
+                    return (
+                      <div key={segment.label} className="flex items-center justify-between rounded-lg border border-border/40 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: segment.color }} />
+                          <span className="text-sm font-medium">{segment.label}</span>
+                        </div>
+                        <div className="text-sm">
+                          <span className={`font-semibold ${segment.textClass}`}>{segment.value}</span>
+                          <span className="text-muted-foreground"> ({percentage}%)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tendencia de efectividad */}
+        <Card className="border border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+              <TrendingUp className="h-5 w-5" />
+              Tendencia de Efectividad de las Revisiones
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Evolución mensual del porcentaje de revisiones aprobadas.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="w-full overflow-x-auto">
+              <svg
+                viewBox={`0 0 ${trendCoordinates.chartWidth} ${trendCoordinates.chartHeight}`}
+                className="w-full min-w-[680px] h-72"
+                role="img"
+                aria-label="Tendencia de efectividad de revisiones"
+              >
+                {[0, 25, 50, 75, 100].map((value) => {
+                  const y = trendCoordinates.chartHeight - trendCoordinates.chartPadding - (value / 100) * (trendCoordinates.chartHeight - trendCoordinates.chartPadding * 2);
+                  return (
+                    <g key={value}>
+                      <line
+                        x1={trendCoordinates.chartPadding}
+                        y1={y}
+                        x2={trendCoordinates.chartWidth - trendCoordinates.chartPadding}
+                        y2={y}
+                        stroke="hsl(var(--border))"
+                        strokeDasharray="4 4"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x={trendCoordinates.chartPadding - 8}
+                        y={y + 4}
+                        textAnchor="end"
+                        className="fill-muted-foreground"
+                        fontSize="12"
+                      >
+                        {value}%
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {trendCoordinates.areaPoints && (
+                  <polygon
+                    points={trendCoordinates.areaPoints}
+                    fill="url(#effectivenessAreaGradient)"
+                    opacity="0.35"
+                  />
+                )}
+
+                {trendCoordinates.polylinePoints && (
+                  <polyline
+                    points={trendCoordinates.polylinePoints}
+                    fill="none"
+                    stroke="#16a34a"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
+
+                {trendCoordinates.points.map((point) => (
+                  <g key={`${point.label}-${point.x}`}>
+                    <circle cx={point.x} cy={point.y} r="4.5" fill="#16a34a" />
+                    <circle cx={point.x} cy={point.y} r="8" fill="#16a34a" opacity="0.15" />
+                    <text
+                      x={point.x}
+                      y={trendCoordinates.chartHeight - trendCoordinates.chartPadding + 18}
+                      textAnchor="middle"
+                      className="fill-muted-foreground"
+                      fontSize="12"
+                    >
+                      {point.label}
+                    </text>
+                    <text
+                      x={point.x}
+                      y={point.y - 10}
+                      textAnchor="middle"
+                      fontSize="12"
+                      fontWeight="600"
+                      fill="#166534"
+                    >
+                      {point.efectividad}%
+                    </text>
+                  </g>
+                ))}
+
+                <defs>
+                  <linearGradient id="effectivenessAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22c55e" stopOpacity="0.45" />
+                    <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border border-border/50 bg-accent/20 p-3">
+                <p className="text-xs text-muted-foreground">Promedio del período</p>
+                <p className="text-xl font-bold text-foreground">{promedioEfectividad}%</p>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-green-50 dark:bg-green-950 p-3">
+                <p className="text-xs text-muted-foreground">Mejor mes</p>
+                <p className="text-sm font-semibold text-green-700 dark:text-green-300">{mejorMes.label}</p>
+                <p className="text-lg font-bold text-green-600">{mejorMes.efectividad}%</p>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-blue-50 dark:bg-blue-950 p-3">
+                <p className="text-xs text-muted-foreground">Último mes</p>
+                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">{ultimoMes.label}</p>
+                <p className="text-lg font-bold text-blue-600">{ultimoMes.efectividad}%</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Actividad Reciente */}
         <Card className="border border-border/50">

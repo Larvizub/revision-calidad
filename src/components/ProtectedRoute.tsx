@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2 } from 'lucide-react';
+import { AuthLoadingSkeleton } from '@/components/AppSkeletons';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,11 +11,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="flex flex-col justify-center items-center h-screen bg-background">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      </div>
-    );
+    return <AuthLoadingSkeleton />;
   }
 
   if (!user) {

@@ -6,9 +6,11 @@ import { Label } from '@/components/ui/label';
 import { DatabaseService } from '@/services/database';
 import { useToast } from '@/hooks/useToast';
 import type { Area, Parametro, Evento } from '@/types';
-import { Loader2, Save, FileText, Search } from 'lucide-react';
+import { Save, FileText, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
+import { InlineRowsSkeleton, RevisionLoadingSkeleton } from '@/components/AppSkeletons';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface RevisionResult {
   parametroId: string;
@@ -218,18 +220,7 @@ const RevisionAreas: React.FC = () => {
   const progressPercentage = totalParams > 0 ? (completedParams / totalParams) * 100 : 0;
 
   if (isLoading) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <div className="p-4 lg:p-6 space-y-6 min-h-full">
-          <div className="flex items-center justify-center h-64">
-            <div className="flex flex-col items-center space-y-4">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-muted-foreground">Cargando datos...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <RevisionLoadingSkeleton />;
   }
 
   return (
@@ -269,7 +260,7 @@ const RevisionAreas: React.FC = () => {
                   disabled={isSearchingSkill}
                   title="Buscar por ID en Skill"
                 >
-                  {isSearchingSkill ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {isSearchingSkill ? <Skeleton className="h-4 w-4 rounded-full" /> : <Search className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
@@ -333,11 +324,8 @@ const RevisionAreas: React.FC = () => {
         {selectedArea && (
           <div className="bg-card rounded-lg border border-border/50 shadow-sm overflow-hidden">
             {isLoadingParametros ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="flex flex-col items-center space-y-2">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Cargando parámetros...</p>
-                </div>
+              <div className="p-4">
+                <InlineRowsSkeleton rows={6} />
               </div>
             ) : parametros.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-32 space-y-2">
