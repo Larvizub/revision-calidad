@@ -51,10 +51,7 @@ const Usuarios: React.FC = () => {
   const loadUsuarios = useCallback(async () => {
     setIsLoading(true);
     try {
-      console.log('Usuarios: Cargando usuarios...');
       const usuariosData = await dbService.getUsuarios();
-      console.log('Usuarios: Datos recibidos del servicio:', usuariosData);
-      console.log('Usuarios: Cantidad de usuarios:', usuariosData.length);
       setUsuarios(usuariosData);
     } catch (error) {
       console.error('Error loading usuarios:', error);

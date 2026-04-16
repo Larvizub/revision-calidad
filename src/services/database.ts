@@ -20,15 +20,6 @@ export class DatabaseService {
   private reportesRef = ref(this.db, 'reportes');
   private usuariosRef = ref(this.db, 'usuarios');
 
-  constructor() {
-    try {
-      console.log('DatabaseService: Inicializando con base de datos URL:', this.db.app.options.databaseURL);
-      console.log('DatabaseService: Referencia usuarios:', this.usuariosRef.toString());
-    } catch (error) {
-      console.warn('DatabaseService: Error leyendo información de la base de datos en constructor', error);
-    }
-  }
-
   // Crear un nuevo evento
   async createEvento(evento: Omit<Evento, 'id'>): Promise<string> {
     const newEventoRef = push(this.eventosRef);
@@ -635,38 +626,27 @@ export class DatabaseService {
 
   async getUsuarios(): Promise<Usuario[]> {
     try {
-      console.log('DatabaseService: Obteniendo usuarios de Firebase...');
       const snapshot = await get(this.usuariosRef);
-      console.log('DatabaseService: Snapshot existe:', snapshot.exists());
       
       if (snapshot.exists()) {
         const usuarios: Usuario[] = [];
-        console.log('DatabaseService: Datos del snapshot:', snapshot.val());
         
         snapshot.forEach((childSnapshot) => {
           const userData = childSnapshot.val();
-          console.log('DatabaseService: Usuario individual:', {
-            id: childSnapshot.key,
-            data: userData
-          });
           
           usuarios.push({
             id: childSnapshot.key!,
             ...userData,
           });
         });
-        
-        console.log('DatabaseService: Total usuarios obtenidos:', usuarios.length);
-        console.log('DatabaseService: Usuarios completos:', usuarios);
-        
+
         return usuarios.sort((a, b) => {
           const nombreA = a.nombre || '';
           const nombreB = b.nombre || '';
           return nombreA.localeCompare(nombreB);
         });
       }
-      
-      console.log('DatabaseService: No hay usuarios en la base de datos');
+
       return [];
     } catch (error) {
       console.error('DatabaseService: Error al obtener usuarios:', error);
@@ -692,7 +672,6 @@ export class DatabaseService {
 
   async getUserByEmail(email: string): Promise<Usuario | null> {
     try {
-      console.log('DatabaseService: Buscando usuario por email:', email);
       const snapshot = await get(this.usuariosRef);
       
       if (snapshot.exists()) {
@@ -707,8 +686,7 @@ export class DatabaseService {
             return true; // Romper el ciclo forEach
           }
         });
-        
-        console.log('DatabaseService: Usuario encontrado por email:', foundUser ? 'Sí' : 'No');
+
         return foundUser;
       }
       
@@ -721,7 +699,6 @@ export class DatabaseService {
 
   async getUserByUid(uid: string): Promise<Usuario | null> {
     try {
-      console.log('DatabaseService: Buscando usuario por UID:', uid);
       const snapshot = await get(this.usuariosRef);
       
       if (snapshot.exists()) {
@@ -736,8 +713,7 @@ export class DatabaseService {
             return true; // Romper el ciclo forEach
           }
         });
-        
-        console.log('DatabaseService: Usuario encontrado por UID:', foundUser ? 'Sí' : 'No');
+
         return foundUser;
       }
       

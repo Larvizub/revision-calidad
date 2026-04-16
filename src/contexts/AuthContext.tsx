@@ -36,8 +36,6 @@ const INACTIVITY_TIMEOUT = 2 * 60 * 60 * 1000;
 // Función para registrar/actualizar usuario en Firebase Database
 const ensureUserInDatabase = async (firebaseUser: User, dbService: DatabaseService) => {
   try {
-    console.log('AuthContext: Verificando usuario en base de datos...', firebaseUser.email);
-    
     // Verificar si el usuario ya existe en Firebase Database por UID (más eficiente)
     let existingUser = await dbService.getUserByUid(firebaseUser.uid);
     
@@ -47,8 +45,6 @@ const ensureUserInDatabase = async (firebaseUser: User, dbService: DatabaseServi
     }
     
     if (!existingUser) {
-      console.log('AuthContext: Usuario no encontrado, creando nuevo registro...');
-      
       // Crear nuevo usuario en Firebase Database
       const newUsuario: Omit<Usuario, 'id'> = {
         uid: firebaseUser.uid,
@@ -62,10 +58,7 @@ const ensureUserInDatabase = async (firebaseUser: User, dbService: DatabaseServi
       };
       
       await dbService.createUsuario(newUsuario);
-      console.log('AuthContext: Usuario creado en base de datos');
     } else {
-      console.log('AuthContext: Usuario existente encontrado, actualizando último acceso...');
-      
       // Solo actualizar último acceso si han pasado más de 5 minutos desde la última actualización
       const lastAccess = existingUser.ultimoAcceso ? new Date(existingUser.ultimoAcceso).getTime() : 0;
       const now = new Date().getTime();
@@ -83,9 +76,6 @@ const ensureUserInDatabase = async (firebaseUser: User, dbService: DatabaseServi
         };
         
         await dbService.updateUsuario(existingUser.id, updatedData);
-        console.log('AuthContext: Información de usuario actualizada');
-      } else {
-        console.log('AuthContext: Usuario actualizado recientemente, omitiendo actualización');
       }
     }
   } catch (error) {
@@ -189,8 +179,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const result = await signInWithPopup(auth, microsoftProvider);
       const user = result.user;
-
-      console.log('Usuario autenticado con Microsoft:', user);
 
       // Validar dominio del correo según recinto seleccionado
       try {
