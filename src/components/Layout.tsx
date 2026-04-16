@@ -36,7 +36,7 @@ const Layout: React.FC = () => {
               className="h-8 w-auto object-contain"
             />
             <div>
-              <h1 className="text-base font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+              <h1 className="hidden sm:block text-base font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                 Revisión de Eventos
               </h1>
               <p className="hidden sm:block text-xs text-muted-foreground">Control de calidad operativo</p>
