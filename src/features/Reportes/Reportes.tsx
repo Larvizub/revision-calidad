@@ -226,6 +226,281 @@ const Reportes: React.FC = () => {
     return 'N/A';
   };
 
+  const formatMonthShort = (date: Date) => {
+    return new Intl.DateTimeFormat('es-ES', { month: 'short', year: '2-digit' }).format(date);
+  };
+
+  const getGeneralDashboardData = (revisiones: Array<Record<string, unknown>>) => {
+    const statusCounts = {
+      aprobadas: revisiones.filter((r) => r.estado === 'aprobado').length,
+      pendientes: revisiones.filter((r) => r.estado === 'pendiente').length,
+      rechazadas: revisiones.filter((r) => r.estado === 'rechazado').length
+    };
+
+    let totalParametros = 0;
+    let parametrosCumplidos = 0;
+
+    revisiones.forEach((revision) => {
+      const metrics = getRevisionMetrics(revision);
+      totalParametros += metrics.totalParametros;
+      parametrosCumplidos += metrics.parametrosCumplidos;
+    });
+
+    const cumplimientoGlobal = totalParametros > 0
+      ? Number(((parametrosCumplidos / totalParametros) * 100).toFixed(1))
+      : 0;
+
+    const areaMap = new Map<string, number>();
+    revisiones.forEach((revision) => {
+      const areaName = (revision.area as { nombre?: string })?.nombre || 'Sin área';
+      areaMap.set(areaName, (areaMap.get(areaName) || 0) + 1);
+    });
+
+    const topAreas = Array.from(areaMap.entries())
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
+    const monthMap = new Map<string, { date: Date; count: number }>();
+    revisiones.forEach((revision) => {
+      if (!revision.fechaRevision) return;
+      const date = new Date(revision.fechaRevision as string);
+      if (Number.isNaN(date.getTime())) return;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const current = monthMap.get(key);
+      if (current) {
+        current.count += 1;
+      } else {
+        monthMap.set(key, { date: new Date(date.getFullYear(), date.getMonth(), 1), count: 1 });
+      }
+    });
+
+    const monthlyTrend = Array.from(monthMap.values())
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .slice(-6)
+      .map((item) => ({ label: formatMonthShort(item.date), value: item.count }));
+
+    const comentariosCalidad = revisiones.filter((r) => String(r.comentariosCalidad || '').trim().length > 0).length;
+
+    return {
+      totalRevisiones: revisiones.length,
+      statusCounts,
+      cumplimientoGlobal,
+      totalParametros,
+      parametrosCumplidos,
+      comentariosCalidad,
+      topAreas,
+      monthlyTrend
+    };
+  };
+
+  const createCanvas = (width: number, height: number) => {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    return { canvas, ctx };
+  };
+
+  const createDoughnutChartDataUrl = (
+    title: string,
+    items: Array<{ label: string; value: number; color: string }>,
+    width = 760,
+    height = 420
+  ): string | null => {
+    const setup = createCanvas(width, height);
+    if (!setup) return null;
+    const { canvas, ctx } = setup;
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'bold 28px Arial';
+    ctx.fillText(title, 28, 44);
+
+    const total = items.reduce((sum, item) => sum + item.value, 0);
+    const centerX = 230;
+    const centerY = 230;
+    const outerRadius = 130;
+    const innerRadius = 72;
+
+    let startAngle = -Math.PI / 2;
+    items.forEach((item) => {
+      const ratio = total > 0 ? item.value / total : 0;
+      const slice = ratio * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.arc(centerX, centerY, outerRadius, startAngle, startAngle + slice);
+      ctx.closePath();
+      ctx.fillStyle = item.color;
+      ctx.fill();
+      startAngle += slice;
+    });
+
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, innerRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fill();
+
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 34px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(total), centerX, centerY + 12);
+    ctx.font = '14px Arial';
+    ctx.fillText('Revisiones', centerX, centerY + 36);
+    ctx.textAlign = 'left';
+
+    let legendY = 115;
+    items.forEach((item) => {
+      const percentage = total > 0 ? `${((item.value / total) * 100).toFixed(1)}%` : '0.0%';
+      ctx.fillStyle = item.color;
+      ctx.fillRect(430, legendY - 12, 18, 18);
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText(item.label, 458, legendY + 2);
+      ctx.font = '16px Arial';
+      ctx.fillStyle = '#475569';
+      ctx.fillText(`${item.value} (${percentage})`, 610, legendY + 2);
+      legendY += 56;
+    });
+
+    return canvas.toDataURL('image/png');
+  };
+
+  const createBarChartDataUrl = (
+    title: string,
+    items: Array<{ label: string; value: number }>,
+    color: string,
+    width = 760,
+    height = 420
+  ): string | null => {
+    const setup = createCanvas(width, height);
+    if (!setup) return null;
+    const { canvas, ctx } = setup;
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'bold 28px Arial';
+    ctx.fillText(title, 28, 44);
+
+    if (items.length === 0) {
+      ctx.fillStyle = '#64748b';
+      ctx.font = '20px Arial';
+      ctx.fillText('Sin datos disponibles', 28, 110);
+      return canvas.toDataURL('image/png');
+    }
+
+    const maxValue = Math.max(...items.map((item) => item.value), 1);
+    const chartLeft = 210;
+    const chartTop = 88;
+    const chartWidth = 520;
+    const barHeight = 34;
+    const barGap = 18;
+
+    items.forEach((item, index) => {
+      const y = chartTop + index * (barHeight + barGap);
+      const barWidth = (item.value / maxValue) * chartWidth;
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(chartLeft, y, chartWidth, barHeight);
+      ctx.fillStyle = color;
+      ctx.fillRect(chartLeft, y, barWidth, barHeight);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '15px Arial';
+      ctx.fillText(item.label.length > 28 ? `${item.label.slice(0, 28)}...` : item.label, 22, y + 22);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = 'bold 15px Arial';
+      ctx.fillText(String(item.value), chartLeft + barWidth + 8, y + 22);
+    });
+
+    return canvas.toDataURL('image/png');
+  };
+
+  const createLineChartDataUrl = (
+    title: string,
+    items: Array<{ label: string; value: number }>,
+    lineColor: string,
+    width = 940,
+    height = 440
+  ): string | null => {
+    const setup = createCanvas(width, height);
+    if (!setup) return null;
+    const { canvas, ctx } = setup;
+
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'bold 28px Arial';
+    ctx.fillText(title, 28, 44);
+
+    if (items.length === 0) {
+      ctx.fillStyle = '#64748b';
+      ctx.font = '20px Arial';
+      ctx.fillText('Sin tendencia disponible', 28, 110);
+      return canvas.toDataURL('image/png');
+    }
+
+    const chartLeft = 80;
+    const chartTop = 90;
+    const chartWidth = width - 130;
+    const chartHeight = 280;
+    const maxValue = Math.max(...items.map((item) => item.value), 1);
+
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i += 1) {
+      const y = chartTop + (chartHeight / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(chartLeft, y);
+      ctx.lineTo(chartLeft + chartWidth, y);
+      ctx.stroke();
+    }
+
+    const getX = (index: number) => chartLeft + (index * chartWidth) / Math.max(items.length - 1, 1);
+    const getY = (value: number) => chartTop + chartHeight - (value / maxValue) * chartHeight;
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    items.forEach((item, index) => {
+      const x = getX(index);
+      const y = getY(item.value);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    items.forEach((item, index) => {
+      const x = getX(index);
+      const y = getY(item.value);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '14px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(item.label, x, chartTop + chartHeight + 24);
+      ctx.fillText(String(item.value), x, y - 12);
+    });
+
+    ctx.textAlign = 'left';
+    return canvas.toDataURL('image/png');
+  };
+
   const isAdmin = userProfile?.role === 'administrador';
 
   const generatePDFReport = async (data: Record<string, unknown>, tipo: string) => {
@@ -565,6 +840,66 @@ const Reportes: React.FC = () => {
   doc.text(`Rechazadas: ${stats.rechazadas} (${toPercent(stats.rechazadas, stats.total)})`, 20, currentY + 30);
         doc.setTextColor(0, 0, 0);
         currentY += 45;
+
+        if (isGeneral) {
+          const dashboard = getGeneralDashboardData(revisiones);
+
+          checkPageBreak(145);
+          doc.setFillColor(...COLORS.secondary);
+          doc.roundedRect(MARGIN, currentY - 6, CONTENT_WIDTH, 10, 2, 2, 'F');
+          doc.setTextColor(...COLORS.secondaryForeground);
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.text('ANÁLISIS VISUAL DEL DESEMPEÑO', MARGIN + 4, currentY);
+          doc.setTextColor(...COLORS.neutralText);
+          currentY += 14;
+
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.text(
+            `Cumplimiento global de parámetros: ${dashboard.cumplimientoGlobal.toFixed(1)}% (${dashboard.parametrosCumplidos}/${dashboard.totalParametros})`,
+            MARGIN,
+            currentY
+          );
+          currentY += 8;
+          doc.text(
+            `Revisiones con comentario de calidad: ${dashboard.comentariosCalidad}/${dashboard.totalRevisiones}`,
+            MARGIN,
+            currentY
+          );
+          currentY += 8;
+
+          const statusChart = createDoughnutChartDataUrl('Distribución por estado', [
+            { label: 'Aprobadas', value: dashboard.statusCounts.aprobadas, color: '#16a34a' },
+            { label: 'Pendientes', value: dashboard.statusCounts.pendientes, color: '#f59e0b' },
+            { label: 'Rechazadas', value: dashboard.statusCounts.rechazadas, color: '#ef4444' }
+          ]);
+
+          const topAreasChart = createBarChartDataUrl(
+            'Top áreas con mayor volumen',
+            dashboard.topAreas,
+            '#273c2a'
+          );
+
+          const trendChart = createLineChartDataUrl(
+            'Tendencia mensual de revisiones (últimos periodos)',
+            dashboard.monthlyTrend,
+            '#273c2a'
+          );
+
+          if (statusChart && topAreasChart) {
+            checkPageBreak(70);
+            doc.addImage(statusChart, 'PNG', MARGIN, currentY, (CONTENT_WIDTH - 6) / 2, 64);
+            doc.addImage(topAreasChart, 'PNG', MARGIN + (CONTENT_WIDTH - 6) / 2 + 6, currentY, (CONTENT_WIDTH - 6) / 2, 64);
+            currentY += 72;
+          }
+
+          if (trendChart) {
+            checkPageBreak(60);
+            doc.addImage(trendChart, 'PNG', MARGIN, currentY, CONTENT_WIDTH, 56);
+            currentY += 64;
+          }
+        }
 
         const tableData = revisiones.map((revision: Record<string, unknown>) => [
           (revision.evento as { nombre?: string })?.nombre || 'N/A',
@@ -951,6 +1286,166 @@ const Reportes: React.FC = () => {
     applyTableFormat(worksheet, headerRowNumber, headers);
   };
 
+  const addGeneralDashboardSheet = (
+    workbook: Workbook,
+    revisiones: Array<Record<string, unknown>>
+  ) => {
+    const worksheet = workbook.addWorksheet('Dashboard General');
+    applySheetHeader(worksheet, 'DASHBOARD - RESUMEN GENERAL', 16);
+
+    for (let column = 1; column <= 16; column += 1) {
+      worksheet.getColumn(column).width = 13;
+    }
+
+    const dashboard = getGeneralDashboardData(revisiones);
+    const cumplimiento = dashboard.totalParametros > 0
+      ? `${dashboard.cumplimientoGlobal.toFixed(1)}%`
+      : '0.0%';
+    const porcentajeComentarios = dashboard.totalRevisiones > 0
+      ? `${((dashboard.comentariosCalidad / dashboard.totalRevisiones) * 100).toFixed(1)}%`
+      : '0.0%';
+
+    worksheet.getCell('A4').value = 'KPI';
+    worksheet.getCell('B4').value = 'VALOR';
+    worksheet.getCell('C4').value = 'DETALLE';
+    worksheet.getCell('D4').value = 'IMPACTO';
+
+    ['A4', 'B4', 'C4', 'D4'].forEach((cellRef) => {
+      const cell = worksheet.getCell(cellRef);
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: EXCEL_THEME.primary }
+      };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: EXCEL_THEME.white } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        right: { style: 'thin', color: { argb: EXCEL_THEME.border } }
+      };
+    });
+
+    const kpiRows = [
+      ['Total de revisiones', dashboard.totalRevisiones, 'Cobertura del periodo filtrado', 'Control de volumen'],
+      ['Cumplimiento global', cumplimiento, `${dashboard.parametrosCumplidos}/${dashboard.totalParametros} parámetros conformes`, 'Calidad operativa'],
+      ['Comentarios de calidad', dashboard.comentariosCalidad, `${porcentajeComentarios} de revisiones con feedback`, 'Trazabilidad y mejora']
+    ];
+
+    kpiRows.forEach((row, index) => {
+      const rowNumber = 5 + index;
+      worksheet.getCell(`A${rowNumber}`).value = row[0];
+      worksheet.getCell(`B${rowNumber}`).value = row[1];
+      worksheet.getCell(`C${rowNumber}`).value = row[2];
+      worksheet.getCell(`D${rowNumber}`).value = row[3];
+
+      ['A', 'B', 'C', 'D'].forEach((column) => {
+        const cell = worksheet.getCell(`${column}${rowNumber}`);
+        cell.font = { name: 'Arial', size: 10, color: { argb: EXCEL_THEME.text } };
+        cell.alignment = { vertical: 'middle', wrapText: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: rowNumber % 2 === 0 ? EXCEL_THEME.mutedRow : EXCEL_THEME.white }
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          right: { style: 'thin', color: { argb: EXCEL_THEME.border } }
+        };
+      });
+    });
+
+    worksheet.getCell('A10').value = 'Visuales automáticos';
+    worksheet.getCell('A10').font = { name: 'Arial', size: 11, bold: true, color: { argb: EXCEL_THEME.primary } };
+
+    const statusChart = createDoughnutChartDataUrl('Distribución por estado', [
+      { label: 'Aprobadas', value: dashboard.statusCounts.aprobadas, color: '#16a34a' },
+      { label: 'Pendientes', value: dashboard.statusCounts.pendientes, color: '#f59e0b' },
+      { label: 'Rechazadas', value: dashboard.statusCounts.rechazadas, color: '#ef4444' }
+    ]);
+
+    const areasChart = createBarChartDataUrl(
+      'Top áreas con mayor volumen',
+      dashboard.topAreas,
+      '#273c2a'
+    );
+
+    const trendChart = createLineChartDataUrl(
+      'Tendencia mensual de revisiones (últimos periodos)',
+      dashboard.monthlyTrend,
+      '#273c2a',
+      1100,
+      420
+    );
+
+    if (statusChart) {
+      const statusImageId = workbook.addImage({ base64: statusChart, extension: 'png' });
+      worksheet.addImage(statusImageId, {
+        tl: { col: 0, row: 10 },
+        ext: { width: 460, height: 250 }
+      });
+    }
+
+    if (areasChart) {
+      const areasImageId = workbook.addImage({ base64: areasChart, extension: 'png' });
+      worksheet.addImage(areasImageId, {
+        tl: { col: 8, row: 10 },
+        ext: { width: 460, height: 250 }
+      });
+    }
+
+    if (trendChart) {
+      const trendImageId = workbook.addImage({ base64: trendChart, extension: 'png' });
+      worksheet.addImage(trendImageId, {
+        tl: { col: 0, row: 24 },
+        ext: { width: 920, height: 250 }
+      });
+    }
+
+    const summaryStartRow = 39;
+    worksheet.getCell(`A${summaryStartRow}`).value = 'ÁREA';
+    worksheet.getCell(`B${summaryStartRow}`).value = 'REVISIONES';
+    ['A', 'B'].forEach((column) => {
+      const cell = worksheet.getCell(`${column}${summaryStartRow}`);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_THEME.secondary } };
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: EXCEL_THEME.text } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        right: { style: 'thin', color: { argb: EXCEL_THEME.border } }
+      };
+    });
+
+    const areasForTable = dashboard.topAreas.length > 0 ? dashboard.topAreas : [{ label: 'Sin datos', value: 0 }];
+    areasForTable.forEach((item, index) => {
+      const rowNumber = summaryStartRow + 1 + index;
+      worksheet.getCell(`A${rowNumber}`).value = item.label;
+      worksheet.getCell(`B${rowNumber}`).value = item.value;
+
+      ['A', 'B'].forEach((column) => {
+        const cell = worksheet.getCell(`${column}${rowNumber}`);
+        cell.font = { name: 'Arial', size: 10, color: { argb: EXCEL_THEME.text } };
+        cell.alignment = { vertical: 'middle' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: rowNumber % 2 === 0 ? EXCEL_THEME.mutedRow : EXCEL_THEME.white }
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          right: { style: 'thin', color: { argb: EXCEL_THEME.border } }
+        };
+      });
+    });
+  };
+
   const generateExcelReport = (data: Record<string, unknown>, tipo: string): Workbook => {
     const workbook = new Workbook();
     workbook.creator = 'Sistema de Revisión de Calidad';
@@ -1092,6 +1587,10 @@ const Reportes: React.FC = () => {
       const isGeneral = tipo === 'general';
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
       if (revisiones) {
+        if (isGeneral) {
+          addGeneralDashboardSheet(workbook, revisiones);
+        }
+
         const verificacionesData = revisiones.map((revision: Record<string, unknown>) => {
           const metrics = getRevisionMetrics(revision);
 
