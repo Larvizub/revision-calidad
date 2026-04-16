@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/useToast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Parametro, Area } from '@/types';
 import { Plus, Search, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { readExcelFirstSheetRows } from '@/lib/excel';
 
 const Parametros: React.FC = () => {
   const [parametros, setParametros] = useState<Parametro[]>([]);
@@ -166,19 +166,23 @@ const Parametros: React.FC = () => {
     if (!file) return;
 
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = await readExcelFirstSheetRows(file);
+      const parametrosToImport = jsonData
+        .map((row) => {
+          const idArea = String(row['ID Area'] ?? row['IDArea'] ?? row['idArea'] ?? '').trim();
+          const nombre = String(row['Nombre'] ?? row['nombre'] ?? '').trim();
+          return {
+            idArea,
+            nombre,
+            estado: 'activo' as const,
+          };
+        })
+        .filter((parametro) => parametro.idArea.length > 0 && parametro.nombre.length > 0);
 
-      const parametrosToImport = jsonData.map((row: unknown) => {
-        const r = row as Record<string, unknown>;
-        return {
-          idArea: String(r['ID Area']),
-          nombre: String(r['Nombre']),
-          estado: 'activo' as const,
-        };
-      });
+      if (parametrosToImport.length === 0) {
+        showError('No se encontraron filas válidas en el archivo.');
+        return;
+      }
 
       await dbService.importParametrosFromExcel(parametrosToImport);
       await loadParametros();

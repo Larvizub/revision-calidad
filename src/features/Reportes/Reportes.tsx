@@ -20,11 +20,11 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { Workbook, type Worksheet } from 'exceljs';
 
 // Tipo para la función autoTable exportada
 type AutoTableFunction = (doc: jsPDF, options: AutoTableOptions) => void;
 const ensureAutoTable = (fn: unknown): fn is AutoTableFunction => typeof fn === 'function';
-import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 // Tipo para autoTable
@@ -597,59 +597,305 @@ const Reportes: React.FC = () => {
     }
   };
 
-  const generateExcelReport = (data: Record<string, unknown>, tipo: string) => {
-    const wb = XLSX.utils.book_new();
-    
-    if (tipo === 'revisiones_evento' && (data as { evento?: unknown }).evento) {
-      // Hoja de información del evento
-      const evento = (data as { evento: { nombre: string; idEvento: string; descripcion?: string; fechaEvento?: string; estado: string } }).evento;
-      const eventoInfo = [
-        ['INFORMACIÓN DEL EVENTO'],
-        [''],
-        ['Campo', 'Valor'],
-        ['Evento', evento.nombre],
-        ['ID Evento', evento.idEvento],
-        ['Descripción', evento.descripcion || 'N/A'],
-        ['Fecha Evento', evento.fechaEvento || 'N/A'],
-        ['Estado', evento.estado],
-        ['Fecha Generación', formatDate(new Date().toISOString())],
-        ['Hora Generación', new Date().toLocaleTimeString('es-ES')]
-      ];
-      
-      const wsEvento = XLSX.utils.aoa_to_sheet(eventoInfo);
-      XLSX.utils.book_append_sheet(wb, wsEvento, 'Información Evento');
+  const EXCEL_THEME = {
+    primary: 'FF273C2A',
+    secondary: 'FFD7C07A',
+    border: 'FFE2E8F0',
+    text: 'FF111827',
+    mutedRow: 'FFF8FAFC',
+    white: 'FFFFFFFF',
+    success: 'FF15803D',
+    warning: 'FFD97706',
+    danger: 'FFB91C1C'
+  };
 
-      // Hoja de resumen de revisiones
+  const normalizeCumpleValue = (resultado: unknown): boolean | null => {
+    if (typeof resultado === 'boolean') return resultado;
+
+    if (typeof resultado === 'string') {
+      const normalized = resultado.trim().toLowerCase();
+      if (normalized === 'cumple' || normalized === 'si' || normalized === 'sí') return true;
+      if (normalized === 'no_cumple' || normalized === 'no') return false;
+      return null;
+    }
+
+    if (resultado && typeof resultado === 'object') {
+      const value = resultado as { cumple?: unknown; valor?: unknown };
+      if (typeof value.cumple === 'boolean') return value.cumple;
+      if (typeof value.cumple === 'string') {
+        const normalized = value.cumple.trim().toLowerCase();
+        if (normalized === 'cumple' || normalized === 'si' || normalized === 'sí') return true;
+        if (normalized === 'no_cumple' || normalized === 'no') return false;
+      }
+      if (typeof value.valor === 'string') {
+        const normalized = value.valor.trim().toLowerCase();
+        if (normalized === 'cumple' || normalized === 'si' || normalized === 'sí') return true;
+        if (normalized === 'no_cumple' || normalized === 'no') return false;
+      }
+    }
+
+    return null;
+  };
+
+  const getDetalleResultado = (resultado: unknown): { valor: string; cumple: string; comentarios: string } => {
+    const cumpleBool = normalizeCumpleValue(resultado);
+
+    if (resultado && typeof resultado === 'object') {
+      const value = resultado as { valor?: unknown; comentarios?: unknown };
+      return {
+        valor: value.valor != null ? String(value.valor) : 'No evaluado',
+        cumple: cumpleBool === null ? 'NO APLICA' : cumpleBool ? 'SÍ' : 'NO',
+        comentarios: value.comentarios != null ? String(value.comentarios) : 'Sin comentarios'
+      };
+    }
+
+    if (typeof resultado === 'string') {
+      return {
+        valor: resultado,
+        cumple: cumpleBool === null ? 'NO APLICA' : cumpleBool ? 'SÍ' : 'NO',
+        comentarios: 'Sin comentarios'
+      };
+    }
+
+    return {
+      valor: 'No evaluado',
+      cumple: cumpleBool === null ? 'NO APLICA' : cumpleBool ? 'SÍ' : 'NO',
+      comentarios: 'Sin comentarios'
+    };
+  };
+
+  const getHeaderStyle = (fillColor: string, textColor: string) => ({
+    fill: {
+      type: 'pattern' as const,
+      pattern: 'solid' as const,
+      fgColor: { argb: fillColor }
+    },
+    font: {
+      name: 'Arial',
+      size: 11,
+      bold: true,
+      color: { argb: textColor }
+    }
+  });
+
+  const autoFitColumns = (worksheet: Worksheet, min = 14, max = 48) => {
+    worksheet.columns.forEach((column) => {
+      let maxLength = min;
+
+      if (!column.eachCell) return;
+
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const raw = cell.value;
+        const text = raw == null
+          ? ''
+          : typeof raw === 'object' && 'richText' in raw
+            ? raw.richText.map((part) => part.text ?? '').join('')
+            : String(raw);
+        maxLength = Math.max(maxLength, text.length + 2);
+      });
+
+      column.width = Math.min(max, maxLength);
+    });
+  };
+
+  const applySheetHeader = (worksheet: Worksheet, title: string, totalColumns: number) => {
+    const cols = Math.max(totalColumns, 2);
+
+    worksheet.mergeCells(1, 1, 1, cols);
+    const titleCell = worksheet.getCell(1, 1);
+    titleCell.value = title;
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: EXCEL_THEME.primary }
+    };
+    titleCell.font = {
+      name: 'Arial',
+      size: 14,
+      bold: true,
+      color: { argb: EXCEL_THEME.white }
+    };
+
+    worksheet.mergeCells(2, 1, 2, cols);
+    const subtitleCell = worksheet.getCell(2, 1);
+    subtitleCell.value = `Generado el ${formatDate(new Date().toISOString())}`;
+    subtitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    subtitleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: EXCEL_THEME.secondary }
+    };
+    subtitleCell.font = {
+      name: 'Arial',
+      size: 10,
+      bold: true,
+      color: { argb: EXCEL_THEME.text }
+    };
+
+    worksheet.getRow(1).height = 24;
+    worksheet.getRow(2).height = 18;
+  };
+
+  const applyTableFormat = (worksheet: Worksheet, headerRowNumber: number, headers: string[]) => {
+    const headerRow = worksheet.getRow(headerRowNumber);
+    const headerStyle = getHeaderStyle(EXCEL_THEME.primary, EXCEL_THEME.white);
+
+    headerRow.eachCell((cell) => {
+      cell.fill = headerStyle.fill;
+      cell.font = headerStyle.font;
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        right: { style: 'thin', color: { argb: EXCEL_THEME.border } }
+      };
+    });
+
+    const statusColumnIndexes = headers
+      .map((header, index) => (/estado/i.test(header) ? index + 1 : -1))
+      .filter((index) => index > 0);
+
+    for (let rowNumber = headerRowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+      const row = worksheet.getRow(rowNumber);
+      const useMuted = rowNumber % 2 === 0;
+
+      row.eachCell((cell) => {
+        cell.font = { name: 'Arial', size: 10, color: { argb: EXCEL_THEME.text } };
+        cell.alignment = { vertical: 'middle', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+          right: { style: 'thin', color: { argb: EXCEL_THEME.border } }
+        };
+
+        if (useMuted) {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: EXCEL_THEME.mutedRow }
+          };
+        }
+      });
+
+      statusColumnIndexes.forEach((columnIndex) => {
+        const statusCell = row.getCell(columnIndex);
+        const status = String(statusCell.value ?? '').toUpperCase();
+
+        if (status.includes('APROB')) {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_THEME.success } };
+          statusCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: EXCEL_THEME.white } };
+        } else if (status.includes('PEND')) {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_THEME.warning } };
+          statusCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: EXCEL_THEME.white } };
+        } else if (status.includes('RECHAZ')) {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_THEME.danger } };
+          statusCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: EXCEL_THEME.white } };
+        }
+      });
+    }
+
+    worksheet.views = [{ state: 'frozen', ySplit: headerRowNumber }];
+    worksheet.autoFilter = {
+      from: { row: headerRowNumber, column: 1 },
+      to: { row: headerRowNumber, column: Math.max(headers.length, 1) }
+    };
+    autoFitColumns(worksheet);
+  };
+
+  const addStyledTableSheet = (
+    workbook: Workbook,
+    sheetName: string,
+    title: string,
+    rows: Array<Record<string, unknown>>
+  ) => {
+    const worksheet = workbook.addWorksheet(sheetName);
+    const headers = rows.length > 0 ? Object.keys(rows[0]) : ['Detalle'];
+    const totalColumns = headers.length;
+
+    applySheetHeader(worksheet, title, totalColumns);
+
+    const headerRowNumber = 3;
+    worksheet.addRow(headers);
+
+    if (rows.length === 0) {
+      worksheet.addRow(['Sin datos para los filtros seleccionados']);
+      worksheet.mergeCells(4, 1, 4, Math.max(totalColumns, 1));
+      const emptyCell = worksheet.getCell(4, 1);
+      emptyCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: EXCEL_THEME.text } };
+      emptyCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    } else {
+      rows.forEach((rowData) => {
+        const rowValues = headers.map((header) => rowData[header] ?? '');
+        worksheet.addRow(rowValues);
+      });
+    }
+
+    applyTableFormat(worksheet, headerRowNumber, headers);
+  };
+
+  const generateExcelReport = (data: Record<string, unknown>, tipo: string): Workbook => {
+    const workbook = new Workbook();
+    workbook.creator = 'Sistema de Revisión de Calidad';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+
+    if (tipo === 'revisiones_evento' && (data as { evento?: unknown }).evento) {
+      const evento = (data as {
+        evento: { nombre: string; idEvento: string; descripcion?: string; fechaEvento?: string; estado: string };
+      }).evento;
+
+      const eventoSheet = workbook.addWorksheet('Información Evento');
+      applySheetHeader(eventoSheet, 'INFORMACIÓN DEL EVENTO', 2);
+      eventoSheet.addRow(['Campo', 'Valor']);
+      eventoSheet.addRow(['Evento', evento.nombre]);
+      eventoSheet.addRow(['ID Evento', evento.idEvento]);
+      eventoSheet.addRow(['Descripción', evento.descripcion || 'N/A']);
+      eventoSheet.addRow(['Fecha Evento', evento.fechaEvento || 'N/A']);
+      eventoSheet.addRow(['Estado', evento.estado]);
+      eventoSheet.addRow(['Fecha Generación', formatDate(new Date().toISOString())]);
+      eventoSheet.addRow(['Hora Generación', new Date().toLocaleTimeString('es-ES')]);
+      applyTableFormat(eventoSheet, 3, ['Campo', 'Valor']);
+
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
       if (revisiones && revisiones.length > 0) {
-        const revisionesData = revisiones.map((revision: Record<string, unknown>) => ({
-          'Área': (revision.area as { nombre?: string })?.nombre || 'N/A',
-          'Fecha Revisión': formatDate(revision.fechaRevision as string),
-          'Estado': ((revision.estado as string) || '').toUpperCase(),
-          'Aprobado Por': (revision.aprobadoPor as string) || 'N/A',
-          'Fecha Aprobación': revision.fechaAprobacion ? formatDate(revision.fechaAprobacion as string) : 'N/A',
-          'Comentarios Generales': (revision.comentarios as string) || 'N/A',
-          'Total Parámetros': Object.keys((revision.resultados as Record<string, unknown>) || {}).length,
-          'Parámetros Cumplidos': Object.values((revision.resultados as Record<string, { cumple: boolean }>) || {}).filter(r => r.cumple).length,
-          'Parámetros No Cumplidos': Object.values((revision.resultados as Record<string, { cumple: boolean }>) || {}).filter(r => !r.cumple).length,
-          '% Cumplimiento': Object.keys((revision.resultados as Record<string, unknown>) || {}).length > 0 
-            ? `${((Object.values((revision.resultados as Record<string, { cumple: boolean }>) || {}).filter(r => r.cumple).length / Object.keys((revision.resultados as Record<string, unknown>) || {}).length) * 100).toFixed(1)}%`
-            : '0%'
-        }));
+        const revisionesData = revisiones.map((revision: Record<string, unknown>) => {
+          const resultados = (revision.resultados as Record<string, unknown>) || {};
+          const totalParametros = Object.keys(resultados).length;
+          const parametrosCumplidos = Object.values(resultados).filter((result) => normalizeCumpleValue(result) === true).length;
 
-        const wsRevisiones = XLSX.utils.json_to_sheet(revisionesData);
-        XLSX.utils.book_append_sheet(wb, wsRevisiones, 'Resumen Revisiones');
+          return {
+            'Área': (revision.area as { nombre?: string })?.nombre || 'N/A',
+            'Fecha Revisión': formatDate(revision.fechaRevision as string),
+            'Estado': ((revision.estado as string) || '').toUpperCase(),
+            'Aprobado Por': (revision.aprobadoPor as string) || 'N/A',
+            'Fecha Aprobación': revision.fechaAprobacion ? formatDate(revision.fechaAprobacion as string) : 'N/A',
+            'Comentarios Generales': (revision.comentarios as string) || 'N/A',
+            'Total Parámetros': totalParametros,
+            'Parámetros Cumplidos': parametrosCumplidos,
+            'Parámetros No Cumplidos': Math.max(totalParametros - parametrosCumplidos, 0),
+            '% Cumplimiento': totalParametros > 0 ? `${((parametrosCumplidos / totalParametros) * 100).toFixed(1)}%` : '0.0%'
+          };
+        });
 
-        // Hoja detallada de parámetros por revisión
+        addStyledTableSheet(workbook, 'Resumen Revisiones', 'RESUMEN DE REVISIONES', revisionesData);
+
         const parametrosDetallados: Array<Record<string, unknown>> = [];
-        
         revisiones.forEach((revision: Record<string, unknown>) => {
           const area = revision.area as { nombre?: string };
-          const resultados = revision.resultados as Record<string, { valor: string; cumple: boolean; comentarios?: string }> || {};
-          const parametros = revision.parametros as Array<{ id: string; nombre: string; descripcion?: string; valorEsperado?: string; unidadMedida?: string }> || [];
-          
-          parametros.forEach(param => {
-            const resultado = resultados[param.id];
+          const resultados = (revision.resultados as Record<string, unknown>) || {};
+          const parametros = (revision.parametros as Array<{
+            id: string;
+            nombre: string;
+            descripcion?: string;
+            valorEsperado?: string;
+            unidadMedida?: string;
+          }>) || [];
+
+          parametros.forEach((param) => {
+            const detalle = getDetalleResultado(resultados[param.id]);
             parametrosDetallados.push({
               'Área': area?.nombre || 'N/A',
               'Fecha Revisión': formatDate(revision.fechaRevision as string),
@@ -658,77 +904,115 @@ const Reportes: React.FC = () => {
               'Descripción Parámetro': param.descripcion || 'N/A',
               'Valor Esperado': param.valorEsperado || 'N/A',
               'Unidad de Medida': param.unidadMedida || 'N/A',
-              'Valor Obtenido': resultado?.valor || 'No evaluado',
-              'Cumple Estándar': resultado?.cumple ? 'SÍ' : 'NO',
-              'Comentarios Parámetro': resultado?.comentarios || 'Sin comentarios',
+              'Valor Obtenido': detalle.valor,
+              'Cumple Estándar': detalle.cumple,
+              'Comentarios Parámetro': detalle.comentarios,
               'Evaluado Por': (revision.aprobadoPor as string) || 'N/A',
-              'Evidencias': Array.isArray(revision.evidencias) && (revision.evidencias as string[]).length > 0 ? (revision.evidencias as string[]).join(' | ') : ''
+              'Evidencias': Array.isArray(revision.evidencias) && (revision.evidencias as string[]).length > 0
+                ? (revision.evidencias as string[]).join(' | ')
+                : ''
             });
           });
         });
 
         if (parametrosDetallados.length > 0) {
-          const wsParametros = XLSX.utils.json_to_sheet(parametrosDetallados);
-          XLSX.utils.book_append_sheet(wb, wsParametros, 'Parámetros Detallados');
+          addStyledTableSheet(workbook, 'Parámetros Detallados', 'PARÁMETROS DETALLADOS', parametrosDetallados);
         }
 
-        // Hoja de estadísticas
         const estadisticas = {
           totalRevisiones: revisiones.length,
-          aprobadas: revisiones.filter(r => r.estado === 'aprobado').length,
-          pendientes: revisiones.filter(r => r.estado === 'pendiente').length,
-          rechazadas: revisiones.filter(r => r.estado === 'rechazado').length
+          aprobadas: revisiones.filter((r) => r.estado === 'aprobado').length,
+          pendientes: revisiones.filter((r) => r.estado === 'pendiente').length,
+          rechazadas: revisiones.filter((r) => r.estado === 'rechazado').length,
+          totalParametros: parametrosDetallados.length,
+          parametrosCumplen: parametrosDetallados.filter((p) => p['Cumple Estándar'] === 'SÍ').length,
+          parametrosNoCumplen: parametrosDetallados.filter((p) => p['Cumple Estándar'] === 'NO').length
         };
 
-        const statsData = [
-          ['ESTADÍSTICAS DEL EVENTO'],
-          [''],
-          ['Métrica', 'Valor', 'Porcentaje'],
-          ['Total de Revisiones', estadisticas.totalRevisiones, '100%'],
-          ['Revisiones Aprobadas', estadisticas.aprobadas, `${((estadisticas.aprobadas / estadisticas.totalRevisiones) * 100).toFixed(1)}%`],
-          ['Revisiones Pendientes', estadisticas.pendientes, `${((estadisticas.pendientes / estadisticas.totalRevisiones) * 100).toFixed(1)}%`],
-          ['Revisiones Rechazadas', estadisticas.rechazadas, `${((estadisticas.rechazadas / estadisticas.totalRevisiones) * 100).toFixed(1)}%`],
-          [''],
-          ['Total de Parámetros Evaluados', parametrosDetallados.length, ''],
-          ['Parámetros que Cumplen', parametrosDetallados.filter(p => p['Cumple Estándar'] === 'SÍ').length, `${parametrosDetallados.length > 0 ? ((parametrosDetallados.filter(p => p['Cumple Estándar'] === 'SÍ').length / parametrosDetallados.length) * 100).toFixed(1) : 0}%`],
-          ['Parámetros que No Cumplen', parametrosDetallados.filter(p => p['Cumple Estándar'] === 'NO').length, `${parametrosDetallados.length > 0 ? ((parametrosDetallados.filter(p => p['Cumple Estándar'] === 'NO').length / parametrosDetallados.length) * 100).toFixed(1) : 0}%`]
+        const estadisticasRows = [
+          {
+            'Métrica': 'Total de Revisiones',
+            'Valor': estadisticas.totalRevisiones,
+            'Porcentaje': '100.0%'
+          },
+          {
+            'Métrica': 'Revisiones Aprobadas',
+            'Valor': estadisticas.aprobadas,
+            'Porcentaje': `${((estadisticas.aprobadas / estadisticas.totalRevisiones) * 100).toFixed(1)}%`
+          },
+          {
+            'Métrica': 'Revisiones Pendientes',
+            'Valor': estadisticas.pendientes,
+            'Porcentaje': `${((estadisticas.pendientes / estadisticas.totalRevisiones) * 100).toFixed(1)}%`
+          },
+          {
+            'Métrica': 'Revisiones Rechazadas',
+            'Valor': estadisticas.rechazadas,
+            'Porcentaje': `${((estadisticas.rechazadas / estadisticas.totalRevisiones) * 100).toFixed(1)}%`
+          },
+          {
+            'Métrica': 'Total de Parámetros Evaluados',
+            'Valor': estadisticas.totalParametros,
+            'Porcentaje': estadisticas.totalParametros > 0 ? '100.0%' : '0.0%'
+          },
+          {
+            'Métrica': 'Parámetros que Cumplen',
+            'Valor': estadisticas.parametrosCumplen,
+            'Porcentaje': estadisticas.totalParametros > 0
+              ? `${((estadisticas.parametrosCumplen / estadisticas.totalParametros) * 100).toFixed(1)}%`
+              : '0.0%'
+          },
+          {
+            'Métrica': 'Parámetros que No Cumplen',
+            'Valor': estadisticas.parametrosNoCumplen,
+            'Porcentaje': estadisticas.totalParametros > 0
+              ? `${((estadisticas.parametrosNoCumplen / estadisticas.totalParametros) * 100).toFixed(1)}%`
+              : '0.0%'
+          }
         ];
 
-        const wsStats = XLSX.utils.aoa_to_sheet(statsData);
-        XLSX.utils.book_append_sheet(wb, wsStats, 'Estadísticas');
+        addStyledTableSheet(workbook, 'Estadísticas', 'ESTADÍSTICAS DEL EVENTO', estadisticasRows);
       }
     } else if (tipo === 'verificaciones_calidad') {
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
       if (revisiones) {
-        const verificacionesData = revisiones.map((revision: Record<string, unknown>) => ({
-          'Evento': (revision.evento as { nombre?: string })?.nombre || 'N/A',
-          'ID Evento': (revision.evento as { idEvento?: string })?.idEvento || 'N/A',
-          'Área': (revision.area as { nombre?: string })?.nombre || 'N/A',
-          'Fecha Revisión': formatDate(revision.fechaRevision as string),
-          'Estado': ((revision.estado as string) || '').toUpperCase(),
-          'Verificado Por': (revision.aprobadoPor as string) || 'N/A',
-          'Fecha Verificación': revision.fechaAprobacion ? formatDate(revision.fechaAprobacion as string) : 'N/A',
-          'Comentarios': (revision.comentarios as string) || 'N/A',
-          'Total Parámetros': Object.keys((revision.resultados as Record<string, unknown>) || {}).length,
-          'Parámetros Cumplidos': Object.values((revision.resultados as Record<string, { cumple: boolean }>) || {}).filter(r => r.cumple).length,
-          '% Cumplimiento': Object.keys((revision.resultados as Record<string, unknown>) || {}).length > 0 
-            ? `${((Object.values((revision.resultados as Record<string, { cumple: boolean }>) || {}).filter(r => r.cumple).length / Object.keys((revision.resultados as Record<string, unknown>) || {}).length) * 100).toFixed(1)}%`
-            : '0%'
-        }));
+        const verificacionesData = revisiones.map((revision: Record<string, unknown>) => {
+          const resultados = (revision.resultados as Record<string, unknown>) || {};
+          const totalParametros = Object.keys(resultados).length;
+          const parametrosCumplidos = Object.values(resultados).filter((result) => normalizeCumpleValue(result) === true).length;
 
-        const ws = XLSX.utils.json_to_sheet(verificacionesData);
-        XLSX.utils.book_append_sheet(wb, ws, 'Verificaciones de Calidad');
+          return {
+            'Evento': (revision.evento as { nombre?: string })?.nombre || 'N/A',
+            'ID Evento': (revision.evento as { idEvento?: string })?.idEvento || 'N/A',
+            'Área': (revision.area as { nombre?: string })?.nombre || 'N/A',
+            'Fecha Revisión': formatDate(revision.fechaRevision as string),
+            'Estado': ((revision.estado as string) || '').toUpperCase(),
+            'Verificado Por': (revision.aprobadoPor as string) || 'N/A',
+            'Fecha Verificación': revision.fechaAprobacion ? formatDate(revision.fechaAprobacion as string) : 'N/A',
+            'Comentarios': (revision.comentarios as string) || 'N/A',
+            'Total Parámetros': totalParametros,
+            'Parámetros Cumplidos': parametrosCumplidos,
+            '% Cumplimiento': totalParametros > 0 ? `${((parametrosCumplidos / totalParametros) * 100).toFixed(1)}%` : '0.0%'
+          };
+        });
 
-        // Hoja detallada de parámetros por verificación (cada parámetro evaluado en cada revisión)
+        addStyledTableSheet(workbook, 'Verificaciones de Calidad', 'VERIFICACIONES DE CALIDAD', verificacionesData);
+
         const parametrosDetallados: Array<Record<string, unknown>> = [];
         revisiones.forEach((revision: Record<string, unknown>) => {
           const evento = revision.evento as { nombre?: string };
           const area = revision.area as { nombre?: string };
-          const resultados = revision.resultados as Record<string, { valor?: string; cumple?: boolean; comentarios?: string }> || {};
-          const parametros = revision.parametros as Array<{ id?: string; nombre?: string; descripcion?: string; valorEsperado?: string; unidadMedida?: string }> || [];
+          const resultados = (revision.resultados as Record<string, unknown>) || {};
+          const parametros = (revision.parametros as Array<{
+            id?: string;
+            nombre?: string;
+            descripcion?: string;
+            valorEsperado?: string;
+            unidadMedida?: string;
+          }>) || [];
 
-          parametros.forEach(param => {
-            const resultado = resultados[param.id as string];
+          parametros.forEach((param) => {
+            const detalle = getDetalleResultado(resultados[param.id as string]);
             parametrosDetallados.push({
               'Evento': evento?.nombre || 'N/A',
               'Área': area?.nombre || 'N/A',
@@ -738,44 +1022,52 @@ const Reportes: React.FC = () => {
               'Descripción Parámetro': param.descripcion || 'N/A',
               'Valor Esperado': param.valorEsperado || 'N/A',
               'Unidad de Medida': param.unidadMedida || 'N/A',
-              'Valor Obtenido': resultado?.valor || 'No evaluado',
-              'Cumple Estándar': resultado?.cumple ? 'SÍ' : 'NO',
-              'Comentarios Parámetro': resultado?.comentarios || 'Sin comentarios',
+              'Valor Obtenido': detalle.valor,
+              'Cumple Estándar': detalle.cumple,
+              'Comentarios Parámetro': detalle.comentarios,
               'Evaluado Por': (revision.aprobadoPor as string) || 'N/A',
-              'Evidencias': Array.isArray(revision.evidencias) && (revision.evidencias as string[]).length > 0 ? (revision.evidencias as string[]).join(' | ') : ''
+              'Evidencias': Array.isArray(revision.evidencias) && (revision.evidencias as string[]).length > 0
+                ? (revision.evidencias as string[]).join(' | ')
+                : ''
             });
           });
         });
 
         if (parametrosDetallados.length > 0) {
-          const wsParams = XLSX.utils.json_to_sheet(parametrosDetallados);
-          XLSX.utils.book_append_sheet(wb, wsParams, 'Parámetros Detallados');
+          addStyledTableSheet(workbook, 'Parámetros Detallados', 'PARÁMETROS DETALLADOS', parametrosDetallados);
         }
 
-        // Estadísticas de verificaciones
         const stats = {
           total: revisiones.length,
-          aprobadas: revisiones.filter(r => r.estado === 'aprobado').length,
-          pendientes: revisiones.filter(r => r.estado === 'pendiente').length,
-          rechazadas: revisiones.filter(r => r.estado === 'rechazado').length
+          aprobadas: revisiones.filter((r) => r.estado === 'aprobado').length,
+          pendientes: revisiones.filter((r) => r.estado === 'pendiente').length,
+          rechazadas: revisiones.filter((r) => r.estado === 'rechazado').length
         };
 
-        const statsData = [
-          ['ESTADÍSTICAS DE VERIFICACIONES'],
-          [''],
-          ['Métrica', 'Valor', 'Porcentaje'],
-          ['Total de Verificaciones', stats.total, '100%'],
-          ['Verificaciones Aprobadas', stats.aprobadas, `${((stats.aprobadas / stats.total) * 100).toFixed(1)}%`],
-          ['Verificaciones Pendientes', stats.pendientes, `${((stats.pendientes / stats.total) * 100).toFixed(1)}%`],
-          ['Verificaciones Rechazadas', stats.rechazadas, `${((stats.rechazadas / stats.total) * 100).toFixed(1)}%`]
+        const statsRows = [
+          { 'Métrica': 'Total de Verificaciones', 'Valor': stats.total, 'Porcentaje': '100.0%' },
+          {
+            'Métrica': 'Verificaciones Aprobadas',
+            'Valor': stats.aprobadas,
+            'Porcentaje': stats.total > 0 ? `${((stats.aprobadas / stats.total) * 100).toFixed(1)}%` : '0.0%'
+          },
+          {
+            'Métrica': 'Verificaciones Pendientes',
+            'Valor': stats.pendientes,
+            'Porcentaje': stats.total > 0 ? `${((stats.pendientes / stats.total) * 100).toFixed(1)}%` : '0.0%'
+          },
+          {
+            'Métrica': 'Verificaciones Rechazadas',
+            'Valor': stats.rechazadas,
+            'Porcentaje': stats.total > 0 ? `${((stats.rechazadas / stats.total) * 100).toFixed(1)}%` : '0.0%'
+          }
         ];
 
-        const wsStats = XLSX.utils.aoa_to_sheet(statsData);
-        XLSX.utils.book_append_sheet(wb, wsStats, 'Estadísticas');
+        addStyledTableSheet(workbook, 'Estadísticas', 'ESTADÍSTICAS DE VERIFICACIONES', statsRows);
       }
     }
 
-    return wb;
+    return workbook;
   };
 
   const handleGenerateReport = async (formato: 'pdf' | 'excel') => {
@@ -821,7 +1113,7 @@ const Reportes: React.FC = () => {
       } else {
         const tipoParaGenerarExcel = filtros.tipoReporte === 'aprobaciones_pendientes' ? 'verificaciones_calidad' : filtros.tipoReporte;
         const wb = generateExcelReport(data, tipoParaGenerarExcel);
-        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const excelBuffer = await wb.xlsx.writeBuffer();
         const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `${nombreArchivo}.xlsx`);
       }

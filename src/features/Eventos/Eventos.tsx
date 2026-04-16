@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Evento } from '@/types';
 import { Plus, Search, Edit, Trash2, Upload, Loader2, Globe } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import * as XLSX from 'xlsx';
+import { readExcelFirstSheetRows } from '@/lib/excel';
 
 const Eventos: React.FC = () => {
   const [eventos, setEventos] = useState<Evento[]>([]);
@@ -161,11 +161,8 @@ const Eventos: React.FC = () => {
     if (!file) return;
 
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       // defval:null para mantener claves aunque estén vacías
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: null }) as Array<Record<string, unknown>>;
+      const jsonData = await readExcelFirstSheetRows(file, null);
 
       if (!Array.isArray(jsonData) || jsonData.length === 0) {
         showError('El archivo parece estar vacío o no tiene una hoja válida.');

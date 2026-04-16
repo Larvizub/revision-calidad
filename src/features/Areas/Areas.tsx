@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/useToast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import type { Area } from '@/types';
 import { Plus, Search, Edit, Trash2, Upload, Loader2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { readExcelFirstSheetRows } from '@/lib/excel';
 
 const Areas: React.FC = () => {
   const [areas, setAreas] = useState<Area[]>([]);
@@ -148,18 +148,22 @@ const Areas: React.FC = () => {
     if (!file) return;
 
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = await readExcelFirstSheetRows(file);
 
-      const areasToImport = jsonData.map((row: unknown) => {
-        const r = row as Record<string, unknown>;
-        return {
-          nombre: String(r['Nombre']),
-          estado: 'activo' as const,
-        };
-      });
+      const areasToImport = jsonData
+        .map((row) => {
+          const nombre = String(row['Nombre'] ?? row['nombre'] ?? '').trim();
+          return {
+            nombre,
+            estado: 'activo' as const,
+          };
+        })
+        .filter((area) => area.nombre.length > 0);
+
+      if (areasToImport.length === 0) {
+        showError('No se encontraron filas válidas en el archivo.');
+        return;
+      }
 
       await dbService.importAreasFromExcel(areasToImport);
       // Para importación masiva, es mejor recargar todo para mantener consistencia
