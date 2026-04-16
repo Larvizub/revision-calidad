@@ -545,6 +545,8 @@ const Reportes: React.FC = () => {
 
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
       if (revisiones && revisiones.length > 0) {
+        const toPercent = (value: number, total: number) => total > 0 ? `${((value / total) * 100).toFixed(1)}%` : '0.0%';
+
         // Estadísticas de verificaciones
         const stats = {
           total: revisiones.length,
@@ -556,11 +558,11 @@ const Reportes: React.FC = () => {
         doc.setFontSize(12);
         doc.text(`Total de ${isGeneral ? 'revisiones' : 'verificaciones'}: ${stats.total}`, 20, currentY);
         doc.setTextColor(34, 197, 94);
-        doc.text(`Aprobadas: ${stats.aprobadas} (${((stats.aprobadas/stats.total)*100).toFixed(1)}%)`, 20, currentY + 10);
+  doc.text(`Aprobadas: ${stats.aprobadas} (${toPercent(stats.aprobadas, stats.total)})`, 20, currentY + 10);
         doc.setTextColor(251, 191, 36);
-        doc.text(`Pendientes: ${stats.pendientes} (${((stats.pendientes/stats.total)*100).toFixed(1)}%)`, 20, currentY + 20);
+  doc.text(`Pendientes: ${stats.pendientes} (${toPercent(stats.pendientes, stats.total)})`, 20, currentY + 20);
         doc.setTextColor(239, 68, 68);
-        doc.text(`Rechazadas: ${stats.rechazadas} (${((stats.rechazadas/stats.total)*100).toFixed(1)}%)`, 20, currentY + 30);
+  doc.text(`Rechazadas: ${stats.rechazadas} (${toPercent(stats.rechazadas, stats.total)})`, 20, currentY + 30);
         doc.setTextColor(0, 0, 0);
         currentY += 45;
 
@@ -602,22 +604,71 @@ const Reportes: React.FC = () => {
             5: { cellPadding: 2 }
           }
         });
-        // Añadir comentarios de calidad por revisión (si existen)
-        revisiones.forEach((revision: Record<string, unknown>) => {
-          const comentariosCalidad = (revision.comentariosCalidad as string) || '';
-          if (comentariosCalidad) {
-            checkPageBreak(30);
-            doc.setFontSize(11);
-            doc.setFont('helvetica', 'bold');
-            doc.text('Comentarios de Calidad:', 20, currentY);
-            currentY += 8;
+
+        currentY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY + 12 || currentY + 30;
+
+        const comentariosConContexto = revisiones
+          .map((revision: Record<string, unknown>) => {
+            const comentario = ((revision.comentariosCalidad as string) || '').trim();
+            if (!comentario) return null;
+
+            return {
+              evento: (revision.evento as { nombre?: string })?.nombre || 'Evento no identificado',
+              area: (revision.area as { nombre?: string })?.nombre || 'Área no identificada',
+              estado: ((revision.estado as string) || 'N/A').toUpperCase(),
+              fechaRevision: revision.fechaRevision ? formatDate(revision.fechaRevision as string) : 'N/A',
+              verificadoPor: (revision.aprobadoPor as string) || 'N/A',
+              comentario
+            };
+          })
+          .filter((item): item is {
+            evento: string;
+            area: string;
+            estado: string;
+            fechaRevision: string;
+            verificadoPor: string;
+            comentario: string;
+          } => Boolean(item));
+
+        if (comentariosConContexto.length > 0) {
+          checkPageBreak(24);
+          doc.setFillColor(...COLORS.secondary);
+          doc.roundedRect(MARGIN, currentY - 6, CONTENT_WIDTH, 10, 2, 2, 'F');
+          doc.setFontSize(11);
+          doc.setTextColor(...COLORS.secondaryForeground);
+          doc.setFont('helvetica', 'bold');
+          doc.text('COMENTARIOS DE CALIDAD (CON CONTEXTO DE EVENTO)', MARGIN + 4, currentY);
+          doc.setTextColor(...COLORS.neutralText);
+          currentY += 12;
+
+          comentariosConContexto.forEach((item, index) => {
+            const meta = `Estado: ${item.estado} | Fecha: ${item.fechaRevision} | Responsable: ${item.verificadoPor}`;
+            const wrappedComentario = doc.splitTextToSize(item.comentario, CONTENT_WIDTH - 10);
+            const boxHeight = 20 + wrappedComentario.length * 5;
+
+            checkPageBreak(boxHeight + 8);
+
+            doc.setFillColor(...COLORS.surface);
+            doc.roundedRect(MARGIN, currentY - 4, CONTENT_WIDTH, boxHeight, 2, 2, 'F');
+            doc.setDrawColor(...COLORS.border);
+            doc.roundedRect(MARGIN, currentY - 4, CONTENT_WIDTH, boxHeight, 2, 2, 'S');
+
             doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`${index + 1}. ${item.evento} - ${item.area}`, MARGIN + 3, currentY + 2);
+
+            doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
-            const wrapped = doc.splitTextToSize(comentariosCalidad, CONTENT_WIDTH - 10);
-            doc.text(wrapped, 20, currentY);
-            currentY += wrapped.length * 6 + 8;
-          }
-        });
+            doc.setTextColor(71, 85, 105);
+            doc.text(meta, MARGIN + 3, currentY + 8);
+
+            doc.setTextColor(...COLORS.neutralText);
+            doc.setFontSize(9);
+            doc.text(wrappedComentario, MARGIN + 3, currentY + 14);
+
+            currentY += boxHeight + 4;
+          });
+        }
       }
     }
 
@@ -702,6 +753,29 @@ const Reportes: React.FC = () => {
       valor: 'No evaluado',
       cumple: cumpleBool === null ? 'NO APLICA' : cumpleBool ? 'SÍ' : 'NO',
       comentarios: 'Sin comentarios'
+    };
+  };
+
+  const getRevisionMetrics = (revision: Record<string, unknown>) => {
+    const verificacionCalidad = (revision.verificacionCalidad as Record<string, unknown>) || {};
+    const resultados = (revision.resultados as Record<string, unknown>) || {};
+    const hasVerificacionCalidad = Object.keys(verificacionCalidad).length > 0;
+
+    const source = hasVerificacionCalidad ? verificacionCalidad : resultados;
+    const totalParametros = Object.keys(source).length;
+
+    const parametrosCumplidos = hasVerificacionCalidad
+      ? Object.values(verificacionCalidad).filter((status) => {
+          const normalized = String(status ?? '').trim().toLowerCase();
+          return normalized === 'verificado' || normalized === 'cumple' || normalized === 'aprobado' || normalized === 'si' || normalized === 'sí' || normalized === 'true';
+        }).length
+      : Object.values(resultados).filter((result) => normalizeCumpleValue(result) === true).length;
+
+    return {
+      totalParametros,
+      parametrosCumplidos,
+      resumenParametros: `${parametrosCumplidos}/${totalParametros}`,
+      porcentajeCumplimiento: totalParametros > 0 ? `${((parametrosCumplidos / totalParametros) * 100).toFixed(1)}%` : '0.0%'
     };
   };
 
@@ -1019,9 +1093,7 @@ const Reportes: React.FC = () => {
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
       if (revisiones) {
         const verificacionesData = revisiones.map((revision: Record<string, unknown>) => {
-          const resultados = (revision.resultados as Record<string, unknown>) || {};
-          const totalParametros = Object.keys(resultados).length;
-          const parametrosCumplidos = Object.values(resultados).filter((result) => normalizeCumpleValue(result) === true).length;
+          const metrics = getRevisionMetrics(revision);
 
           return {
             'Evento': (revision.evento as { nombre?: string })?.nombre || 'N/A',
@@ -1031,11 +1103,10 @@ const Reportes: React.FC = () => {
             'Estado': ((revision.estado as string) || '').toUpperCase(),
             [isGeneral ? 'Responsable Calidad' : 'Verificado Por']: (revision.aprobadoPor as string) || 'N/A',
             'Fecha Verificación': revision.fechaAprobacion ? formatDate(revision.fechaAprobacion as string) : 'N/A',
-            'Comentarios': (revision.comentarios as string) || 'N/A',
-            'Total Parámetros': totalParametros,
-            'Parámetros Cumplidos': parametrosCumplidos,
-            'Tiene Verificación Calidad': revision.verificacionCalidad ? 'SÍ' : 'NO',
-            '% Cumplimiento': totalParametros > 0 ? `${((parametrosCumplidos / totalParametros) * 100).toFixed(1)}%` : '0.0%'
+            'Comentarios Revisión': (revision.comentarios as string) || 'N/A',
+            'Comentarios Calidad': (revision.comentariosCalidad as string) || 'Sin comentario de calidad',
+            'Parámetros': metrics.resumenParametros,
+            '% Cumplimiento': metrics.porcentajeCumplimiento
           };
         });
 
