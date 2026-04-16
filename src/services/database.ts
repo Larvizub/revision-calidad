@@ -531,15 +531,18 @@ export class DatabaseService {
 
       let revisionesFiltradas = revisiones.filter(r => r.verificacionCalidad);
 
-      if (filtros?.fechaDesde) {
+      const fechaDesde = filtros?.fechaDesde ? new Date(`${filtros.fechaDesde}T00:00:00`) : null;
+      const fechaHasta = filtros?.fechaHasta ? new Date(`${filtros.fechaHasta}T23:59:59.999`) : null;
+
+      if (fechaDesde) {
         revisionesFiltradas = revisionesFiltradas.filter(r => 
-          new Date(r.fechaRevision) >= new Date(filtros.fechaDesde!)
+          new Date(r.fechaRevision) >= fechaDesde
         );
       }
 
-      if (filtros?.fechaHasta) {
+      if (fechaHasta) {
         revisionesFiltradas = revisionesFiltradas.filter(r => 
-          new Date(r.fechaRevision) <= new Date(filtros.fechaHasta!)
+          new Date(r.fechaRevision) <= fechaHasta
         );
       }
 
@@ -562,6 +565,58 @@ export class DatabaseService {
       };
     } catch (error) {
       console.error('DatabaseService: Error al obtener verificaciones de calidad:', error);
+      throw error;
+    }
+  }
+
+  // Obtener datos para resumen general de revisiones (todas las revisiones)
+  async getReporteResumenGeneral(filtros?: {
+    fechaDesde?: string;
+    fechaHasta?: string;
+    estado?: string;
+  }): Promise<{
+    revisiones: (Revision & { evento?: Evento; area?: Area; parametros?: Parametro[] })[];
+  }> {
+    try {
+      const [revisiones, eventos, areas, parametros] = await Promise.all([
+        this.getRevisiones(),
+        this.getEventos(),
+        this.getAreas(),
+        this.getParametros()
+      ]);
+
+      let revisionesFiltradas = [...revisiones];
+      const fechaDesde = filtros?.fechaDesde ? new Date(`${filtros.fechaDesde}T00:00:00`) : null;
+      const fechaHasta = filtros?.fechaHasta ? new Date(`${filtros.fechaHasta}T23:59:59.999`) : null;
+
+      if (fechaDesde) {
+        revisionesFiltradas = revisionesFiltradas.filter(r => new Date(r.fechaRevision) >= fechaDesde);
+      }
+
+      if (fechaHasta) {
+        revisionesFiltradas = revisionesFiltradas.filter(r => new Date(r.fechaRevision) <= fechaHasta);
+      }
+
+      if (filtros?.estado && filtros.estado !== 'todos') {
+        revisionesFiltradas = revisionesFiltradas.filter(r => r.estado === filtros.estado);
+      }
+
+      const revisionesConDatos = revisionesFiltradas.map((revision) => {
+        const evento = eventos.find((e) => e.id === revision.idEvento);
+        const area = areas.find((a) => a.id === revision.idArea);
+        const parametrosArea = parametros.filter((p) => p.idArea === revision.idArea);
+
+        return {
+          ...revision,
+          evento,
+          area,
+          parametros: parametrosArea
+        };
+      });
+
+      return { revisiones: revisionesConDatos };
+    } catch (error) {
+      console.error('DatabaseService: Error al obtener resumen general de revisiones:', error);
       throw error;
     }
   }

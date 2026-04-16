@@ -76,6 +76,8 @@ interface FiltrosReporte {
 }
 
 const Reportes: React.FC = () => {
+  const PREVIEW_ROWS_PER_PAGE = 20;
+
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [filtros, setFiltros] = useState<FiltrosReporte>({
     tipoReporte: 'revisiones_evento',
@@ -92,6 +94,19 @@ const Reportes: React.FC = () => {
   // Preview de los datos que se exportarán (revisiones / verificaciones) según filtros
   const [previewData, setPreviewData] = useState<Array<Record<string, unknown>> | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewPage, setPreviewPage] = useState(1);
+
+  const totalPreviewRows = previewData?.length ?? 0;
+  const totalPreviewPages = Math.max(1, Math.ceil(totalPreviewRows / PREVIEW_ROWS_PER_PAGE));
+
+  const paginatedPreviewData = useMemo(() => {
+    if (!previewData || previewData.length === 0) return [];
+    const startIndex = (previewPage - 1) * PREVIEW_ROWS_PER_PAGE;
+    return previewData.slice(startIndex, startIndex + PREVIEW_ROWS_PER_PAGE);
+  }, [previewData, previewPage]);
+
+  const previewRangeStart = totalPreviewRows === 0 ? 0 : (previewPage - 1) * PREVIEW_ROWS_PER_PAGE + 1;
+  const previewRangeEnd = Math.min(previewPage * PREVIEW_ROWS_PER_PAGE, totalPreviewRows);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +124,23 @@ const Reportes: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setPreviewPage(1);
+  }, [
+    filtros.tipoReporte,
+    filtros.idEvento,
+    filtros.fechaDesde,
+    filtros.fechaHasta,
+    filtros.estado,
+    previewData?.length
+  ]);
+
+  useEffect(() => {
+    if (previewPage > totalPreviewPages) {
+      setPreviewPage(totalPreviewPages);
+    }
+  }, [previewPage, totalPreviewPages]);
 
   // Cargar datos de preview cuando cambian los filtros
   useEffect(() => {
@@ -138,6 +170,14 @@ const Reportes: React.FC = () => {
             area: areas.find(a => a.id === p.idArea) || { id: p.idArea, nombre: 'N/A' }
           }));
           setPreviewData(enriched as Array<Record<string, unknown>>);
+        } else if (filtros.tipoReporte === 'general') {
+          const res = await dbService.getReporteResumenGeneral({
+            fechaDesde: filtros.fechaDesde,
+            fechaHasta: filtros.fechaHasta,
+            estado: filtros.estado === 'todos' ? undefined : filtros.estado
+          });
+          if (!mounted) return;
+          setPreviewData(((res.revisiones as unknown) as Array<Record<string, unknown>>) || []);
         } else {
           setPreviewData(null);
         }
@@ -496,10 +536,11 @@ const Reportes: React.FC = () => {
           }
         });
       }
-    } else if (tipo === 'verificaciones_calidad') {
+    } else if (tipo === 'verificaciones_calidad' || tipo === 'general') {
+      const isGeneral = tipo === 'general';
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
-      doc.text('VERIFICACIONES DE CALIDAD', 20, currentY);
+      doc.text(isGeneral ? 'RESUMEN GENERAL DE REVISIONES' : 'VERIFICACIONES DE CALIDAD', 20, currentY);
       currentY += 15;
 
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
@@ -513,7 +554,7 @@ const Reportes: React.FC = () => {
         };
 
         doc.setFontSize(12);
-        doc.text(`Total de verificaciones: ${stats.total}`, 20, currentY);
+        doc.text(`Total de ${isGeneral ? 'revisiones' : 'verificaciones'}: ${stats.total}`, 20, currentY);
         doc.setTextColor(34, 197, 94);
         doc.text(`Aprobadas: ${stats.aprobadas} (${((stats.aprobadas/stats.total)*100).toFixed(1)}%)`, 20, currentY + 10);
         doc.setTextColor(251, 191, 36);
@@ -536,7 +577,7 @@ const Reportes: React.FC = () => {
           startY: currentY,
           margin: { left: MARGIN, right: MARGIN },
           tableWidth: CONTENT_WIDTH,
-          head: [['Evento', 'Área', 'Fecha Revisión', 'Estado', 'Verificado Por', 'Fecha Verificación']],
+          head: [['Evento', 'Área', 'Fecha Revisión', 'Estado', isGeneral ? 'Responsable Calidad' : 'Verificado Por', 'Fecha Verificación']],
           body: tableData,
           theme: 'grid',
           styles: { 
@@ -973,7 +1014,8 @@ const Reportes: React.FC = () => {
 
         addStyledTableSheet(workbook, 'Estadísticas', 'ESTADÍSTICAS DEL EVENTO', estadisticasRows);
       }
-    } else if (tipo === 'verificaciones_calidad') {
+    } else if (tipo === 'verificaciones_calidad' || tipo === 'general') {
+      const isGeneral = tipo === 'general';
       const revisiones = (data as { revisiones?: Array<Record<string, unknown>> }).revisiones;
       if (revisiones) {
         const verificacionesData = revisiones.map((revision: Record<string, unknown>) => {
@@ -987,16 +1029,22 @@ const Reportes: React.FC = () => {
             'Área': (revision.area as { nombre?: string })?.nombre || 'N/A',
             'Fecha Revisión': formatDate(revision.fechaRevision as string),
             'Estado': ((revision.estado as string) || '').toUpperCase(),
-            'Verificado Por': (revision.aprobadoPor as string) || 'N/A',
+            [isGeneral ? 'Responsable Calidad' : 'Verificado Por']: (revision.aprobadoPor as string) || 'N/A',
             'Fecha Verificación': revision.fechaAprobacion ? formatDate(revision.fechaAprobacion as string) : 'N/A',
             'Comentarios': (revision.comentarios as string) || 'N/A',
             'Total Parámetros': totalParametros,
             'Parámetros Cumplidos': parametrosCumplidos,
+            'Tiene Verificación Calidad': revision.verificacionCalidad ? 'SÍ' : 'NO',
             '% Cumplimiento': totalParametros > 0 ? `${((parametrosCumplidos / totalParametros) * 100).toFixed(1)}%` : '0.0%'
           };
         });
 
-        addStyledTableSheet(workbook, 'Verificaciones de Calidad', 'VERIFICACIONES DE CALIDAD', verificacionesData);
+        addStyledTableSheet(
+          workbook,
+          isGeneral ? 'Resumen General' : 'Verificaciones de Calidad',
+          isGeneral ? 'RESUMEN GENERAL DE REVISIONES' : 'VERIFICACIONES DE CALIDAD',
+          verificacionesData
+        );
 
         const parametrosDetallados: Array<Record<string, unknown>> = [];
         revisiones.forEach((revision: Record<string, unknown>) => {
@@ -1045,25 +1093,30 @@ const Reportes: React.FC = () => {
         };
 
         const statsRows = [
-          { 'Métrica': 'Total de Verificaciones', 'Valor': stats.total, 'Porcentaje': '100.0%' },
+          { 'Métrica': isGeneral ? 'Total de Revisiones' : 'Total de Verificaciones', 'Valor': stats.total, 'Porcentaje': '100.0%' },
           {
-            'Métrica': 'Verificaciones Aprobadas',
+            'Métrica': isGeneral ? 'Revisiones Aprobadas' : 'Verificaciones Aprobadas',
             'Valor': stats.aprobadas,
             'Porcentaje': stats.total > 0 ? `${((stats.aprobadas / stats.total) * 100).toFixed(1)}%` : '0.0%'
           },
           {
-            'Métrica': 'Verificaciones Pendientes',
+            'Métrica': isGeneral ? 'Revisiones Pendientes' : 'Verificaciones Pendientes',
             'Valor': stats.pendientes,
             'Porcentaje': stats.total > 0 ? `${((stats.pendientes / stats.total) * 100).toFixed(1)}%` : '0.0%'
           },
           {
-            'Métrica': 'Verificaciones Rechazadas',
+            'Métrica': isGeneral ? 'Revisiones Rechazadas' : 'Verificaciones Rechazadas',
             'Valor': stats.rechazadas,
             'Porcentaje': stats.total > 0 ? `${((stats.rechazadas / stats.total) * 100).toFixed(1)}%` : '0.0%'
           }
         ];
 
-        addStyledTableSheet(workbook, 'Estadísticas', 'ESTADÍSTICAS DE VERIFICACIONES', statsRows);
+        addStyledTableSheet(
+          workbook,
+          'Estadísticas',
+          isGeneral ? 'ESTADÍSTICAS DEL RESUMEN GENERAL' : 'ESTADÍSTICAS DE VERIFICACIONES',
+          statsRows
+        );
       }
     }
 
@@ -1103,6 +1156,13 @@ const Reportes: React.FC = () => {
         data = { revisiones: enriched } as Record<string, unknown>;
         // Usaremos el layout de verificaciones de calidad para este tipo
         nombreArchivo = `aprobaciones_pendientes_${new Date().toISOString().split('T')[0]}`;
+      } else if (filtros.tipoReporte === 'general') {
+        data = await dbService.getReporteResumenGeneral({
+          fechaDesde: filtros.fechaDesde,
+          fechaHasta: filtros.fechaHasta,
+          estado: filtros.estado === 'todos' ? undefined : filtros.estado
+        });
+        nombreArchivo = `reporte_general_${new Date().toISOString().split('T')[0]}`;
       }
 
       if (formato === 'pdf') {
@@ -1258,7 +1318,7 @@ const Reportes: React.FC = () => {
             )}
 
             {/* Filtros de Fecha */}
-            {filtros.tipoReporte === 'verificaciones_calidad' && (
+            {(filtros.tipoReporte === 'verificaciones_calidad' || filtros.tipoReporte === 'general') && (
               <>
                 <div>
                   <Label className="text-sm font-medium mb-2 block">Fecha Desde</Label>
@@ -1355,8 +1415,8 @@ const Reportes: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewData && previewData.length > 0 ? (
-                    previewData.map((rev, idx) => (
+                  {paginatedPreviewData.length > 0 ? (
+                    paginatedPreviewData.map((rev, idx) => (
                       <TableRow key={idx}>
                         <TableCell>{getEventoNombre(rev)}</TableCell>
                         <TableCell>{(rev.area as { nombre?: string })?.nombre || 'N/A'}</TableCell>
@@ -1387,6 +1447,13 @@ const Reportes: React.FC = () => {
                                         estado: filtros.estado === 'todos' ? undefined : filtros.estado
                                       });
                                       setPreviewData(((res.revisiones as unknown) as Array<Record<string, unknown>>) || []);
+                                    } else if (filtros.tipoReporte === 'general') {
+                                      const res = await dbService.getReporteResumenGeneral({
+                                        fechaDesde: filtros.fechaDesde,
+                                        fechaHasta: filtros.fechaHasta,
+                                        estado: filtros.estado === 'todos' ? undefined : filtros.estado
+                                      });
+                                      setPreviewData(((res.revisiones as unknown) as Array<Record<string, unknown>>) || []);
                                     }
                                   } catch (err) {
                                     console.error('Error refrescando preview:', err);
@@ -1412,6 +1479,33 @@ const Reportes: React.FC = () => {
                   )}
                 </TableBody>
               </Table>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4">
+                <p className="text-sm text-muted-foreground">
+                  Mostrando {previewRangeStart}-{previewRangeEnd} de {totalPreviewRows} resultados
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPreviewPage(prev => Math.max(prev - 1, 1))}
+                    disabled={previewPage <= 1}
+                  >
+                    Anterior
+                  </Button>
+                  <span className="text-sm text-muted-foreground px-2">
+                    Página {previewPage} de {totalPreviewPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPreviewPage(prev => Math.min(prev + 1, totalPreviewPages))}
+                    disabled={previewPage >= totalPreviewPages}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-32 space-y-2">
